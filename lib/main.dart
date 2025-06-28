@@ -1,7 +1,11 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:own_splitwise_copy/auth_gate.dart';
+import 'package:own_splitwise_copy/screens/trip_screens/create_trip_screen.dart';
 import 'package:own_splitwise_copy/screens/home_screen.dart';
+import 'package:own_splitwise_copy/screens/trip_screens/join_trip_screen.dart';
+import 'package:own_splitwise_copy/screens/trip_screens/my_trips_view.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,16 +19,17 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TripSplit',
+      title: 'Trip Splitter',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const HomeScreen(userName: 'Rohit'), // You can dynamically pass user later
+      home: const AuthGate(), // You can dynamically pass user later
       routes: {
-        '/createTrip': (context) => Placeholder(), // Replace with actual CreateTripScreen()
-        '/joinTrip': (context) => Placeholder(),   // Replace with actual JoinTripScreen()
+        '/createTrip': (context) => CreateTripScreen(), // Replace with actual CreateTripScreen()
+        '/joinTrip': (context) => JoinTripScreen(),   // Replace with actual JoinTripScreen()
+        '/myTrips': (context) => MyTripsScreen(),
       },
     );
   }

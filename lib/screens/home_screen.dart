@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../screens/auth/login_view.dart';
+
 
 class HomeScreen extends StatelessWidget {
   final String? userName;
@@ -29,6 +32,29 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 🔓 Logout button top-right
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.logout, color: Colors.white),
+                        tooltip: 'Logout',
+                        onPressed: () async {
+                          await FirebaseAuth.instance.signOut();
+                          if (context.mounted) {
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (_) => const LoginView()),
+                                  (route) => false,
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
                   // Header
                   Text(
                     'Welcome${userName != null ? ', $userName!' : '!'}',
@@ -66,6 +92,14 @@ class HomeScreen extends StatelessWidget {
                             Navigator.pushNamed(context, '/joinTrip');
                           },
                         ),
+                        const SizedBox(height: 20),
+                        _GlassButton(
+                          label: "View My Trips",
+                          icon: Icons.list_alt_rounded,
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/myTrips');
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -78,6 +112,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
+
 
 // Reusable Glass Button with icon
 class _GlassButton extends StatelessWidget {

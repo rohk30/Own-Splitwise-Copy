@@ -1,7 +1,59 @@
-# https://dart.dev/guides/libraries/private-files
-# Created by `dart pub`
+# Caches
 .dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.vscode/ # VS Code settings, optional but common to ignore
+.apk
+.so
 
-# Avoid committing pubspec.lock for library packages; see
-# https://dart.dev/guides/libraries/private-files#pubspeclock.
-pubspec.lock
+# Generated files
+/ios/.symlinks/
+/android/.gradle
+/android/.idea
+/android/local.properties # Contains SDK paths specific to your machine
+/android/key.properties   # Contains signing key info, should never be committed
+/android/build/
+/build/
+/ios/Flutter/Generated.xcconfig
+/ios/Pods/
+/ios/.generated-integration-test-project/
+/ios/.generated-config/
+
+# Dependency directories
+/node_modules/
+
+# Android specific build outputs
+*.apk
+*.aab
+*.ap_
+*.aar
+*.dex
+*.so # Native libraries, like libflutter.so, libVkLayer_khronos_validation.so
+*.dll
+*.exp
+*.lib
+*.jnilib
+
+# Flutter test outputs
+test/coverage/
+
+# Dart analysis
+.analysis_options.yaml
+
+# IDE specific files
+.idea/
+.DS_Store # Mac specific
+Thumbs.db # Windows specific
+
+# Crashlytics/Fabric (if used)
+fabric.properties
+
+# Any other specific large files you might accidentally add
+# e.g., large media assets that are not code-related
+# *.mp4
+# *.mov
+# etc.
+
+# User-specific preferences
+*.iml
