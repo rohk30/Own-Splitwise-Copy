@@ -83,6 +83,13 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                       );
                     },
                   ),
+                  onTap: () {
+                    Navigator.pushNamed(
+                      context,
+                      '/tripDetails',
+                      arguments: groupCode,
+                    );
+                  },
                 ),
               );
             },

@@ -2,10 +2,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:own_splitwise_copy/auth_gate.dart';
-import 'package:own_splitwise_copy/screens/trip_screens/create_trip_screen.dart';
 import 'package:own_splitwise_copy/screens/home_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/join_trip_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/my_trips_view.dart';
+import 'package:own_splitwise_copy/screens/trip_screens/trip_details_screen.dart';
+import 'package:own_splitwise_copy/screens/trip_screens/create_trip_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,9 +28,18 @@ class MyApp extends StatelessWidget {
       ),
       home: const AuthGate(), // You can dynamically pass user later
       routes: {
-        '/createTrip': (context) => CreateTripScreen(), // Replace with actual CreateTripScreen()
-        '/joinTrip': (context) => JoinTripScreen(),   // Replace with actual JoinTripScreen()
-        '/myTrips': (context) => MyTripsScreen(),
+        '/createTrip': (context) => const CreateTripScreen(),
+        '/joinTrip': (context) => const JoinTripScreen(),
+        '/myTrips': (context) => const MyTripsScreen(),
+      },
+      onGenerateRoute: (settings) {
+        if (settings.name == '/tripDetails') {
+          final groupCode = settings.arguments as String;
+          return MaterialPageRoute(
+            builder: (context) => TripDetailsScreen(groupCode: groupCode),
+          );
+        }
+        return null;
       },
     );
   }
