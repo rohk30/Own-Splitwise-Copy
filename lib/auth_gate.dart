@@ -15,7 +15,7 @@ class AuthGate extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasData) {
-          return const HomeScreen(); // Already logged in
+          return HomeScreen(userName: snapshot.data?.email); // Already logged in
         }
         return const LoginView(); // Show login page
       },

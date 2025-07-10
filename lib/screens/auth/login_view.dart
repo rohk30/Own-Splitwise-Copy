@@ -1,6 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'register_view.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:own_splitwise_copy/screens/auth/register_view.dart';
+
+import '../../auth_gate.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -13,17 +17,41 @@ class _LoginViewState extends State<LoginView> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
+  bool _obscurePassword = true; // For password visibility toggle
 
   Future<void> _signIn() async {
     setState(() => _loading = true);
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final credential =  await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
+
+      final user = credential.user;
+      if(user != null) {
+        final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
+        final snapshot = await userDoc.get();
+
+        if(!snapshot.exists) {
+          await userDoc.set({
+            'email': user.email ?? '',
+            'trips': [],
+          });
+        }
+      }
+
+      // 🔄 Navigate to AuthGate to re-evaluate login state
+      if (context.mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+              (route) => false,
+        );
+      }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message ?? 'Login failed')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? 'Login failed')),
+      );
     }
     setState(() => _loading = false);
   }
@@ -40,17 +68,36 @@ class _LoginViewState extends State<LoginView> {
               controller: _emailController,
               decoration: const InputDecoration(labelText: 'Email'),
             ),
+            const SizedBox(height: 16),
             TextField(
               controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Password'),
+              obscureText: _obscurePassword,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                ),
+              ),
             ),
             const SizedBox(height: 20),
             _loading
                 ? const CircularProgressIndicator()
-                : ElevatedButton(onPressed: _signIn, child: const Text("Login")),
+                : ElevatedButton(
+              onPressed: _signIn,
+              child: const Text("Login"),
+            ),
             TextButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterView())),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RegisterView()),
+              ),
               child: const Text("Don't have an account? Register"),
             ),
           ],

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -16,13 +17,29 @@ class _RegisterViewState extends State<RegisterView> {
   Future<void> _signUp() async {
     setState(() => _loading = true);
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
+      final user = userCredential.user;
+
+      await FirebaseFirestore.instance.collection('users').doc(user!.uid).set({
+        'email': user.email,
+        'trips': [],
+      });
+
+      if(context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Registration successful')),
+        );
+        Navigator.pop(context);
+      }
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message ?? 'Registration failed')));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error: $e')));
     }
     setState(() => _loading = false);
   }
@@ -52,5 +69,6 @@ class _RegisterViewState extends State<RegisterView> {
         ),
       ),
     );
+    Navigator.pop(context);
   }
 }
