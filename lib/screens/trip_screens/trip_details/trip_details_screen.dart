@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'add_expense_screen.dart';
+
 class TripDetailsScreen extends StatefulWidget {
   final String groupCode;
 
@@ -141,7 +143,22 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 },
               ),
             ),
-            if (isOwner) ...[
+            if (isOwner || !isOwner) ...[
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AddExpenseScreen(
+                          groupCode: widget.groupCode,
+                          members: memberIds,
+                          memberEmails: memberEmails
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Add Expense'),
+              ),
               const Divider(),
               TextField(
                 controller: _emailController,
@@ -155,6 +172,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 onPressed: addMemberByEmail,
                 child: const Text('Add Member'),
               ),
+
             ],
           ],
         ),

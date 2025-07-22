@@ -5,7 +5,7 @@ import 'package:own_splitwise_copy/auth_gate.dart';
 import 'package:own_splitwise_copy/screens/home_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/join_trip_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/my_trips_view.dart';
-import 'package:own_splitwise_copy/screens/trip_screens/trip_details_screen.dart';
+import 'package:own_splitwise_copy/screens/trip_screens/trip_details/trip_details_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/create_trip_screen.dart';
 
 void main() async {
