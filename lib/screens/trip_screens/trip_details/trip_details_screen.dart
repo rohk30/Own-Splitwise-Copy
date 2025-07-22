@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'add_expense_screen.dart';
+import 'expense_details_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final String groupCode;
@@ -144,6 +145,59 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               ),
             ),
             if (isOwner || !isOwner) ...[
+              const Divider(),
+              const Text(
+                'Expenses:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('trips')
+                      .doc(widget.groupCode)
+                      .collection('expenses')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final expenses = snapshot.data!.docs;
+
+                    if (expenses.isEmpty) {
+                      return const Center(child: Text("No expenses yet"));
+                    }
+
+                    return ListView.builder(
+                      itemCount: expenses.length,
+                      itemBuilder: (context, index) {
+                        final expense = expenses[index];
+                        final data = expense.data() as Map<String, dynamic>;
+                        final String title = data['description'] ?? 'No Title';
+                        // title = title.toCapitalized();
+                        final amount = data['amount'] ?? 0;
+
+                        return ListTile(
+                          title: Text(title),
+                          subtitle: Text('₹$amount'),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ExpenseDetailsScreen(
+                                  tripId: widget.groupCode,
+                                  expenseId: expense.id,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+
               ElevatedButton(
                 onPressed: () {
                   Navigator.push(
