@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -36,10 +37,32 @@ class MyApp extends StatelessWidget {
         if (settings.name == '/tripDetails') {
           final groupCode = settings.arguments as String;
           return MaterialPageRoute(
-            builder: (context) => TripDetailsScreen(groupCode: groupCode),
+            builder: (context) {
+              return FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance.collection('trips').doc(groupCode).get(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                  }
+
+                  if (!snapshot.hasData || !snapshot.data!.exists) {
+                    return const Scaffold(body: Center(child: Text("Trip not found")));
+                  }
+
+                  final data = snapshot.data!.data() as Map<String, dynamic>;
+                  final members = List<String>.from(data['members'] ?? []);
+                  final memberEmails = Map<String, String>.from(data['memberEmails'] ?? {});
+
+                  return TripDetailsScreen(
+                    groupCode: groupCode,
+                    members: members,
+                    // memberEmails1: memberEmails,
+                  );
+                },
+              );
+            },
           );
         }
-        return null;
       },
     );
   }

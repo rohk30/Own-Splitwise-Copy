@@ -1,7 +1,155 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+
+/*
+class AddExpenseScreen extends StatefulWidget {
+  final String groupCode;
+  final List<String> members;
+  final Map<String, String> memberEmails;
+
+  const AddExpenseScreen({
+    required this.groupCode,
+    required this.members,
+    required this.memberEmails,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<AddExpenseScreen> createState() => _AddExpenseScreenState();
+}
+
+class _AddExpenseScreenState extends State<AddExpenseScreen> {
+  final _formKey = GlobalKey<FormState>();
+  String _title = '';
+  double _amount = 0.0;
+  String? _selectedPayer;
+  Map<String, double> _splitAmounts = {};
+
+  @override
+  void initState() {
+    super.initState();
+    for (var member in widget.members) {
+      _splitAmounts[member] = 0.0;
+    }
+  }
+
+  void _submitExpense() async {
+    if (_formKey.currentState!.validate()) {
+      _formKey.currentState!.save();
+
+      final splitDetails = <String, double>{};
+      _splitAmounts.forEach((member, amount) {
+        if (amount > 0) {
+          splitDetails[member] = amount;
+        }
+      });
+
+      final docRef = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('expenses')
+          .add({
+        'title': _title,
+        'amount': _amount,
+        'payerId': _selectedPayer,
+        'payerName': widget.memberEmails[_selectedPayer] ?? _selectedPayer,
+        'splitType': 'manual',
+        'splitDetails': splitDetails,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Update trip-level summary
+      await _updateTripSummary(splitDetails);
+
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> _updateTripSummary(Map<String, double> splitDetails) async {
+    final tripRef = FirebaseFirestore.instance.collection('trips').doc(widget.groupCode);
+    final tripDoc = await tripRef.get();
+    final existingSplits = Map<String, dynamic>.from(tripDoc.data()?['overallSplit'] ?? {});
+
+    splitDetails.forEach((userId, amount) {
+      if (userId == _selectedPayer) return;
+      final key = '$userId owes $_selectedPayer';
+      existingSplits[key] = (existingSplits[key] ?? 0) + amount;
+    });
+
+    await tripRef.update({
+      'overallSplit': existingSplits,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Add Expense")),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            children: [
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Expense Title'),
+                onSaved: (val) => _title = val ?? '',
+                validator: (val) => val == null || val.isEmpty ? 'Enter a title' : null,
+              ),
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Amount'),
+                keyboardType: TextInputType.number,
+                onSaved: (val) => _amount = double.tryParse(val ?? '0') ?? 0,
+                validator: (val) => val == null || double.tryParse(val) == null ? 'Enter valid amount' : null,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedPayer,
+                items: widget.members.map((member) {
+                  return DropdownMenuItem<String>(
+                    value: member,
+                    child: Text(widget.memberEmails[member] ?? member),
+                  );
+                }).toList(),
+                onChanged: (val) => setState(() => _selectedPayer = val),
+                decoration: const InputDecoration(labelText: 'Paid By'),
+                validator: (val) => val == null ? 'Select a payer' : null,
+              ),
+              const SizedBox(height: 16),
+              const Text('Split Amounts:'),
+              ...widget.members.map((member) {
+                return Row(
+                  children: [
+                    Expanded(child: Text(widget.memberEmails[member] ?? member)),
+                    SizedBox(
+                      width: 100,
+                      child: TextFormField(
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(hintText: '₹0'),
+                        onSaved: (val) => _splitAmounts[member] = double.tryParse(val ?? '0') ?? 0,
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _submitExpense,
+                child: const Text("Add Expense"),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}     */
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+/*
 class AddExpenseScreen extends StatefulWidget {
   final String groupCode;
   final List<String> members;
@@ -254,5 +402,204 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         ),
       ),
     );
+  }
+}     */
+
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class AddExpenseScreen extends StatefulWidget {
+  final String groupCode;
+  final List<String> members;
+  final Map<String, String> memberEmails;
+
+  const AddExpenseScreen({
+    required this.groupCode,
+    required this.members,
+    required this.memberEmails,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<AddExpenseScreen> createState() => _AddExpenseScreenState();
+}
+
+class _AddExpenseScreenState extends State<AddExpenseScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _amountController = TextEditingController();
+  String? _selectedPayer;
+  String _splitType = 'Equal';
+  final Map<String, TextEditingController> _manualAmountControllers = {};
+  final Set<String> _selectedMembersForPartialSplit = {};
+
+  @override
+  void initState() {
+    super.initState();
+    for (var uid in widget.members) {
+      _manualAmountControllers[uid] = TextEditingController();
+    }
+    _selectedPayer = widget.members.isNotEmpty ? widget.members.first : null;
+  }
+
+  void _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final String title = _titleController.text.trim();
+    final double totalAmount = double.parse(_amountController.text.trim());
+    final Map<String, double> splits = {};
+
+    if (_splitType == 'Equal') {
+      final double splitAmount = totalAmount / widget.members.length;
+      for (var uid in widget.members) {
+        splits[uid] = double.parse(splitAmount.toStringAsFixed(2));
+      }
+    } else if (_splitType == 'Manual') {
+      double sum = 0;
+      for (var uid in widget.members) {
+        double userAmount = double.tryParse(_manualAmountControllers[uid]!.text.trim()) ?? 0.0;
+        splits[uid] = userAmount;
+        sum += userAmount;
+      }
+      if (sum != totalAmount) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Manual amounts do not sum up to total amount.')),
+        );
+        return;
+      }
+    } else if (_splitType == 'Partial Equal') {
+      if (_selectedMembersForPartialSplit.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select at least one member.')),
+        );
+        return;
+      }
+      final double partialSplitAmount = totalAmount / _selectedMembersForPartialSplit.length;
+      for (var uid in _selectedMembersForPartialSplit) {
+        splits[uid] = double.parse(partialSplitAmount.toStringAsFixed(2));
+      }
+      for (var uid in widget.members) {
+        if (!splits.containsKey(uid)) splits[uid] = 0.0;
+      }
+    }
+
+    await FirebaseFirestore.instance
+        .collection('trips')
+        .doc(widget.groupCode)
+        .collection('expenses')
+        .add({
+      'description': title,
+      'amount': totalAmount,
+      'paidBy': _selectedPayer,
+      'splitType': _splitType,
+      'splits': splits.map((uid, amt) => MapEntry(uid, amt.toDouble())),
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Add Expense")),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            children: [
+              TextFormField(
+                controller: _titleController,
+                decoration: const InputDecoration(labelText: "Expense Title"),
+                validator: (val) => val == null || val.isEmpty ? "Required" : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _amountController,
+                decoration: const InputDecoration(labelText: "Total Amount"),
+                keyboardType: TextInputType.number,
+                validator: (val) =>
+                val == null || double.tryParse(val) == null ? "Enter valid amount" : null,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _selectedPayer,
+                items: widget.members
+                    .map((uid) => DropdownMenuItem(
+                  value: uid,
+                  child: Text(widget.memberEmails[uid] ?? uid),
+                ))
+                    .toList(),
+                onChanged: (val) => setState(() => _selectedPayer = val),
+                decoration: const InputDecoration(labelText: "Paid By"),
+              ),
+              const SizedBox(height: 20),
+              DropdownButtonFormField<String>(
+                value: _splitType,
+                items: const [
+                  DropdownMenuItem(value: 'Equal', child: Text('Split Equally')),
+                  DropdownMenuItem(value: 'Manual', child: Text('Split Manually')),
+                  DropdownMenuItem(value: 'Partial Equal', child: Text('Split Among Selected')),
+                ],
+                onChanged: (val) => setState(() => _splitType = val!),
+                decoration: const InputDecoration(labelText: "Split Type"),
+              ),
+              const SizedBox(height: 20),
+              if (_splitType == 'Manual') ...widget.members.map((uid) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: TextFormField(
+                    controller: _manualAmountControllers[uid],
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: "${widget.memberEmails[uid] ?? uid}'s share",
+                    ),
+                  ),
+                );
+              }).toList(),
+              if (_splitType == 'Partial Equal')
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("Select members to split among:", style: TextStyle(fontSize: 16)),
+                    const SizedBox(height: 8),
+                    ...widget.members.map((uid) {
+                      return CheckboxListTile(
+                        title: Text(widget.memberEmails[uid] ?? uid),
+                        value: _selectedMembersForPartialSplit.contains(uid),
+                        onChanged: (selected) {
+                          setState(() {
+                            if (selected == true) {
+                              _selectedMembersForPartialSplit.add(uid);
+                            } else {
+                              _selectedMembersForPartialSplit.remove(uid);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ],
+                ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _submit,
+                child: const Text("Add Expense"),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _amountController.dispose();
+    for (var controller in _manualAmountControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 }

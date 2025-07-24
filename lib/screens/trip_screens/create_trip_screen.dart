@@ -37,6 +37,9 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       'createdBy': user?.uid,
       'createdAt': Timestamp.now(),
       'members': [user?.uid],
+      'memberEmails': {
+        user!.uid: user.email,
+      },
     };
 
     try {
