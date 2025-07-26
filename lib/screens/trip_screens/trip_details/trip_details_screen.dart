@@ -13,6 +13,22 @@ import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth if you
 // Make sure you have this screen, otherwise the FloatingActionButton will throw an error
 import 'add_expense_screen.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:collection/collection.dart'; // For PriorityQueue
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // For FirebaseAuth (though not directly used in the provided snippet)
+
+import 'add_expense_screen.dart';
+import 'expense_details_screen.dart'; // Ensure correct path for ExpenseDetailsScreen
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:collection/collection.dart'; // For PriorityQueue
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // For FirebaseAuth (though not directly used in the provided snippet)
+
+import 'add_expense_screen.dart';
+import 'expense_details_screen.dart'; // Ensure correct path for ExpenseDetailsScreen
+
 class TripDetailsScreen extends StatefulWidget {
   final String groupCode;
   final List<String> members; // List of userIds of trip members
@@ -31,13 +47,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
   late TabController _tabController;
   Map<String, String> _allUserEmails = {};
   Map<String, Map<String, double>> overallOwes = {};
-  TextEditingController _addMemberEmailController = TextEditingController(); // Controller for the add member dialog
-  bool _useReducedTransactions = false; // default
+  TextEditingController _addMemberEmailController = TextEditingController();
+  bool _useReducedTransactions = false;
 
+  List<String> _currentMembers = [];
 
   List<MapEntry<String, String>> get sortedMembers {
-    final List<MapEntry<String, String>> entries = _allUserEmails.entries.toList();
-    entries.sort((a, b) => a.value.compareTo(b.value)); // Sort by email/name
+    final List<MapEntry<String, String>> entries = _allUserEmails.entries
+        .where((entry) => _currentMembers.contains(entry.key))
+        .toList();
+    entries.sort((a, b) => a.value.compareTo(b.value));
     return entries;
   }
 
@@ -45,18 +64,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _initializeTripData(); // Unified initialization function
+    _currentMembers = List.from(widget.members);
+    _initializeTripData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _addMemberEmailController.dispose(); // Dispose the controller
+    _addMemberEmailController.dispose();
     super.dispose();
   }
 
   Future<void> _fetchAllMemberEmails() async {
-    if (widget.members.isEmpty) {
+    if (_currentMembers.isEmpty) {
       setState(() {
         _allUserEmails = {};
       });
@@ -65,7 +85,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
 
     final Map<String, String> fetchedEmails = {};
 
-    for (String uid in widget.members) {
+    for (String uid in _currentMembers) {
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       if (userDoc.exists) {
         fetchedEmails[uid] = userDoc['email'] ?? userDoc['name'] ?? uid;
@@ -76,6 +96,167 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     setState(() {
       _allUserEmails = fetchedEmails;
     });
+  }
+
+  // Method to remove a member
+  Future<void> _removeMember(String userIdToRemove) async {
+    final bool confirm = await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Remove Member"),
+          content: Text("Are you sure you want to remove ${_allUserEmails[userIdToRemove] ?? 'this member'}? This will not remove their past expenses."),
+          actions: <Widget>[
+            TextButton(
+              child: const Text("Cancel"),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            ElevatedButton(
+              child: const Text("Remove"),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+
+    if (!confirm) {
+      return;
+    }
+
+    try {
+      final tripRef = FirebaseFirestore.instance.collection('trips').doc(widget.groupCode);
+
+      await tripRef.update({
+        'members': FieldValue.arrayRemove([userIdToRemove])
+      });
+
+      setState(() {
+        _currentMembers.removeWhere((id) => id == userIdToRemove);
+        _allUserEmails.remove(userIdToRemove);
+      });
+
+      await _initializeTripData();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("${_allUserEmails[userIdToRemove] ?? 'Member'} removed successfully!")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to remove member: $e")),
+      );
+    }
+  }
+
+  // MODIFIED: _deleteExpense - now called from both Dismissible (if still used)
+  // and the long-press menu.
+  Future<void> _deleteExpense(String expenseId) async {
+    // This dialog is redundant if called from the Dismissible's confirmDismiss,
+    // but useful if called directly from an action.
+    // For long press, we'll use a separate menu.
+    try {
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('expenses')
+          .doc(expenseId)
+          .delete();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Expense deleted successfully!")),
+      );
+      // Recalculate balances after deletion
+      _calculateOverallSplit();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to delete expense: $e")),
+      );
+    }
+  }
+
+  Future<void> updateExpense(String expenseId, Map<String, dynamic> updatedData) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('expenses')
+          .doc(expenseId)
+          .update(updatedData);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Expense updated successfully!")),
+      );
+      _calculateOverallSplit();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to update expense: $e")),
+      );
+    }
+  }
+
+  // NEW: Function to show long-press options for an expense
+  void _showExpenseOptions(String expenseId) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit Expense'),
+                onTap: () async {
+                  Navigator.pop(context); // Close the bottom sheet
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ExpenseDetailsScreen(
+                        tripId: widget.groupCode,
+                        expenseId: expenseId,
+                        memberEmails: _allUserEmails,
+                        onUpdateExpense: updateExpense,
+                        onDeleteExpense: _deleteExpense, // Pass the delete callback
+                      ),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Delete Expense', style: TextStyle(color: Colors.red)),
+                onTap: () async {
+                  Navigator.pop(context); // Close the bottom sheet
+                  // Call the delete function with confirmation
+                  final bool confirm = await showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        title: const Text("Confirm Delete"),
+                        content: const Text("Are you sure you want to delete this expense?"),
+                        actions: <Widget>[
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(false),
+                            child: const Text("Cancel"),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(true),
+                            child: const Text("Delete"),
+                          ),
+                        ],
+                      );
+                    },
+                  ) ?? false;
+                  if (confirm) {
+                    _deleteExpense(expenseId); // Call the existing delete method
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _initializeTripData() async {
@@ -90,28 +271,43 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
         .collection('expenses')
         .get();
 
-    final Map<String, double> netBalance = {}; // For reduced transaction
-    final Map<String, Map<String, double>> rawSplit = {}; // To build initial
+    final Map<String, double> netBalance = {};
+    for (var memberId in _currentMembers) {
+      netBalance[memberId] = 0.0;
+    }
+
+    final Map<String, Map<String, double>> rawSplit = {};
+    for (var memberId1 in _currentMembers) {
+      rawSplit.putIfAbsent(memberId1, () => {});
+      for (var memberId2 in _currentMembers) {
+        if (memberId1 != memberId2) {
+          rawSplit[memberId1]![memberId2] = 0.0;
+        }
+      }
+    }
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
-      final payerId = data['paidBy'] ?? '';
+      final payerId = data['paidBy'] as String? ?? '';
       final splits = (data['splits'] ?? {}) as Map<String, dynamic>;
 
+      if (!_currentMembers.contains(payerId)) {
+        continue;
+      }
+
       for (final entry in splits.entries) {
-        final userId = entry.key;
+        final userId = entry.key as String;
         final amount = (entry.value as num?)?.toDouble() ?? 0.0;
 
-        if (userId == payerId) continue;
+        if (!_currentMembers.contains(userId) || userId == payerId) {
+          continue;
+        }
 
-        // Store raw split
+        netBalance[userId] = (netBalance[userId] ?? 0.0) - amount;
+        netBalance[payerId] = (netBalance[payerId] ?? 0.0) + amount;
+
         rawSplit.putIfAbsent(userId, () => {});
-        rawSplit[userId]![payerId] =
-            (rawSplit[userId]![payerId] ?? 0) + amount;
-
-        // Net balance for reduced
-        netBalance[userId] = (netBalance[userId] ?? 0) - amount;
-        netBalance[payerId] = (netBalance[payerId] ?? 0) + amount;
+        rawSplit[userId]![payerId] = (rawSplit[userId]![payerId] ?? 0.0) + amount;
       }
     }
 
@@ -119,7 +315,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       final reducedResult = _calculateMinTransactionsSplit(netBalance);
       setState(() => overallOwes = reducedResult);
     } else {
-      // Simplify mutual debts (A->B and B->A)
       final simplifiedSplit = _simplifyPairwiseDebts(rawSplit);
       setState(() => overallOwes = simplifiedSplit);
     }
@@ -129,37 +324,44 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       Map<String, Map<String, double>> rawSplit) {
     final Map<String, Map<String, double>> result = {};
 
-    for (final from in rawSplit.keys) {
-      for (final to in rawSplit[from]!.keys) {
-        final amountFromTo = rawSplit[from]![to] ?? 0;
-        final amountToFrom = rawSplit[to]?[from] ?? 0;
+    Set<String> allInvolvedUids = {};
+    rawSplit.keys.forEach((uid) => allInvolvedUids.add(uid));
+    rawSplit.values.forEach((toMap) => toMap.keys.forEach((uid) => allInvolvedUids.add(uid)));
 
-        if (amountFromTo > amountToFrom) {
+
+    for (final fromUid in allInvolvedUids) {
+      for (final toUid in allInvolvedUids) {
+        if (fromUid == toUid) continue;
+
+        final amountFromTo = rawSplit[fromUid]?[toUid] ?? 0.0;
+        final amountToFrom = rawSplit[toUid]?[fromUid] ?? 0.0;
+
+        if (amountFromTo > 0.001 || amountToFrom > 0.001) {
           final netAmount = amountFromTo - amountToFrom;
-          result.putIfAbsent(from, () => {});
-          result[from]![to] = netAmount;
+
+          if (netAmount > 0.001) {
+            result.putIfAbsent(fromUid, () => {});
+            result[fromUid]![toUid] = netAmount;
+          }
         }
-        // else if B owes A more or equal, A pays nothing
       }
     }
     return result;
   }
 
-
   Map<String, Map<String, double>> _calculateMinTransactionsSplit(
       Map<String, double> netBalance) {
     final owesHeap = PriorityQueue<MapEntry<String, double>>(
-          (a, b) => b.value.compareTo(a.value), // Max heap
+          (a, b) => b.value.compareTo(a.value),
     );
     final owedHeap = PriorityQueue<MapEntry<String, double>>(
-          (a, b) => b.value.compareTo(a.value), // Max heap
+          (a, b) => b.value.compareTo(a.value),
     );
 
-    // Separate users who owe and are owed
     netBalance.forEach((user, amount) {
-      if (amount < 0) {
-        owesHeap.add(MapEntry(user, -amount)); // Make positive
-      } else if (amount > 0) {
+      if (amount < -0.001) {
+        owesHeap.add(MapEntry(user, -amount));
+      } else if (amount > 0.001) {
         owedHeap.add(MapEntry(user, amount));
       }
     });
@@ -172,30 +374,27 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
 
       final minAmount = owe.value < owed.value ? owe.value : owed.value;
 
-      // owe.key owes owed.key
       result.putIfAbsent(owe.key, () => {});
-      result[owe.key]![owed.key] = minAmount;
+      result[owe.key]![owed.key] = (result[owe.key]![owed.key] ?? 0.0) + minAmount;
 
       final remainingOwe = owe.value - minAmount;
       final remainingOwed = owed.value - minAmount;
 
-      if (remainingOwe > 0) {
+      if (remainingOwe > 0.001) {
         owesHeap.add(MapEntry(owe.key, remainingOwe));
       }
-      if (remainingOwed > 0) {
+      if (remainingOwed > 0.001) {
         owedHeap.add(MapEntry(owed.key, remainingOwed));
       }
     }
-
     return result;
   }
-
 
   Widget _buildSplitSummary() {
     List<String> summary = [];
     overallOwes.forEach((fromUid, payees) {
       payees.forEach((toUid, amount) {
-        if (amount > 0) {
+        if (amount > 0.001) {
           final fromNameOrEmail = _allUserEmails[fromUid] ?? fromUid;
           final toNameOrEmail = _allUserEmails[toUid] ?? toUid;
           summary.add("$fromNameOrEmail owes $toNameOrEmail ₹${amount.toStringAsFixed(2)}");
@@ -214,10 +413,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     );
   }
 
-  // --- New method to add a member ---
   Future<void> _addMemberToTrip(String memberEmail) async {
     try {
-      // 1. Find the user by email in the 'users' collection
       final userQuerySnapshot = await FirebaseFirestore.instance
           .collection('users')
           .where('email', isEqualTo: memberEmail)
@@ -233,34 +430,30 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
 
       final newMemberUid = userQuerySnapshot.docs.first.id;
 
-      // Check if the member is already in the trip
-      if (widget.members.contains(newMemberUid)) {
+      if (_currentMembers.contains(newMemberUid)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("This member is already in the trip.")),
         );
         return;
       }
 
-      // 2. Update the 'members' array in the 'trips' document
       await FirebaseFirestore.instance
           .collection('trips')
           .doc(widget.groupCode)
           .update({
-        'members': FieldValue.arrayUnion([newMemberUid]), // Atomically add the new member's UID
+        'members': FieldValue.arrayUnion([newMemberUid]),
       });
 
-      // 3. Update the local state to reflect the change immediately
       setState(() {
-        widget.members.add(newMemberUid); // Add to the local list (important for re-fetching emails)
+        _currentMembers.add(newMemberUid);
       });
 
-      // 4. Re-fetch all member emails (including the new one) and recalculate splits
-      await _initializeTripData(); // Re-fetch emails and re-calculate splits
+      await _initializeTripData();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Member $memberEmail added successfully!")),
       );
-      Navigator.of(context).pop(); // Close the dialog
+      Navigator.of(context).pop();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to add member: $e")),
@@ -268,12 +461,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     }
   }
 
-  // --- Dialog for adding a member ---
   void _showAddMemberDialog() {
-    _addMemberEmailController.clear(); // Clear previous input
+    _addMemberEmailController.clear();
     showDialog(
       context: context,
-      builder: (BuildContext dialogContext) { // Use dialogContext to pop the dialog
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: const Text("Add New Member"),
           content: TextField(
@@ -292,7 +484,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
               child: const Text("Add"),
               onPressed: () {
                 final email = _addMemberEmailController.text.trim();
-                if (email.isNotEmpty && email.contains('@')) { // Simple email validation
+                if (email.isNotEmpty && email.contains('@')) {
                   _addMemberToTrip(email);
                 } else {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
@@ -309,7 +501,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
-    if (_allUserEmails.isEmpty && widget.members.isNotEmpty) {
+    if (_allUserEmails.isEmpty && _currentMembers.isNotEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text("Trip Details")),
         body: const Center(child: CircularProgressIndicator()),
@@ -338,23 +530,30 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
               const SizedBox(height: 10),
               if (sortedMembers.isEmpty)
                 const Text("No members yet.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-              ...sortedMembers.map((entry) => Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  title: Text(entry.value),
-                  // subtitle: Text(entry.key),
-                  leading: const Icon(Icons.person),
-                ),
-              )).toList(),
+              ...sortedMembers.map((entry) {
+                final String memberUid = entry.key;
+                final String memberEmail = entry.value;
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  child: ListTile(
+                    title: Text(memberEmail),
+                    leading: const Icon(Icons.person),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _removeMember(memberUid),
+                    ),
+                  ),
+                );
+              }).toList(),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: _showAddMemberDialog, // Call the new dialog function
+                onPressed: _showAddMemberDialog,
                 child: const Text("Add Member"),
               )
             ],
           ),
 
-          // Tab 2: Expenses Display
+          // Tab 2: Expenses Display - MODIFIED for long press and removed Dismissible
           Column(
             children: [
               Expanded(
@@ -396,17 +595,23 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                           child: ListTile(
                             title: Text(title),
                             subtitle: Text('₹${amount.toStringAsFixed(2)} paid by $paidByDisplay'),
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => ExpenseDetailsScreen(
                                     tripId: widget.groupCode,
                                     expenseId: expense.id,
                                     memberEmails: _allUserEmails,
+                                    onUpdateExpense: updateExpense,
+                                    onDeleteExpense: _deleteExpense, // Pass the delete callback
                                   ),
                                 ),
                               );
+                            },
+                            // NEW: Long press for options (Edit/Delete)
+                            onLongPress: () {
+                              _showExpenseOptions(expense.id);
                             },
                           ),
                         );
@@ -416,30 +621,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                 ),
               ),
               SwitchListTile(
-                title: Text("Reduce Transactions"),
+                title: const Text("Reduce Transactions"),
                 value: _useReducedTransactions,
                 onChanged: (val) {
                   setState(() {
                     _useReducedTransactions = val;
                   });
-                  _calculateOverallSplit(); // recalculate using the new method
+                  _calculateOverallSplit();
                 },
               ),
-              // ElevatedButton(
-              //   onPressed: () {
-              //     Navigator.push(
-              //       context,
-              //       MaterialPageRoute(
-              //         builder: (_) => ExpenseGraphScreen(
-              //           balances: overallOwes,
-              //           memberEmails: _allUserEmails,
-              //         ),
-              //       ),
-              //     );
-              //   },
-              //   child: Text("View Balance Graph"),
-              // ),
-
               const SizedBox(height: 12),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -467,17 +657,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
             MaterialPageRoute(
               builder: (_) => AddExpenseScreen(
                 groupCode: widget.groupCode,
-                members: widget.members, // List of UIDs
-                memberEmails: _allUserEmails, // Pass the fetched map
+                members: _currentMembers,
+                memberEmails: _allUserEmails,
               ),
             ),
           );
-          _calculateOverallSplit(); // Recalculate after adding new expense
+          _calculateOverallSplit();
         },
         child: const Icon(Icons.add),
       ),
     );
   }
 }
-
-
