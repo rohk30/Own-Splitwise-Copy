@@ -81,12 +81,6 @@ class ExpenseDetailsScreen extends StatelessWidget {
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
-
 // Define a type for the update callback, which is what TripDetailsScreen will provide
 typedef OnUpdateExpenseCallback = Future<void> Function(String expenseId, Map<String, dynamic> updatedData);
 // NEW: Define a type for the delete callback
@@ -99,6 +93,7 @@ class ExpenseDetailsScreen extends StatefulWidget {
   final Map<String, String> memberEmails;
   final OnUpdateExpenseCallback onUpdateExpense;
   final OnDeleteExpenseCallback onDeleteExpense; // NEW: Callback for deleting expense
+  final bool initialEditing;
 
   const ExpenseDetailsScreen({
     super.key,
@@ -106,7 +101,8 @@ class ExpenseDetailsScreen extends StatefulWidget {
     required this.expenseId,
     required this.memberEmails,
     required this.onUpdateExpense,
-    required this.onDeleteExpense, // NEW: Required in constructor
+    required this.onDeleteExpense,
+    this.initialEditing = false, // NEW: Required in constructor
   });
 
   @override
@@ -121,12 +117,14 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
 
   bool _isEditing = false;
   Future<DocumentSnapshot>? _expenseFuture;
+  bool _isSettled = false; // NEW: State variable to hold the settled status
 
   final Map<String, TextEditingController> _splitAmountControllers = {};
 
   @override
   void initState() {
     super.initState();
+    _isEditing = widget.initialEditing;
     _expenseFuture = _fetchExpenseData();
   }
 
@@ -146,26 +144,42 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
         .doc(widget.expenseId)
         .get();
 
+    // CORRECTED SYNTAX AND LOGIC:
     if (expenseDoc.exists) {
       final data = expenseDoc.data()!;
       _titleController = TextEditingController(text: data['description'] ?? '');
       _amountController = TextEditingController(text: (data['amount'] ?? 0.0).toStringAsFixed(2));
       _selectedPayerId = data['paidBy'];
       _currentSplits = Map<String, double>.from(data['splits']?.map((key, value) => MapEntry(key, value.toDouble())) ?? {});
+      _isSettled = data['settled'] == true; // CORRECTED: Access through data map and ensure boolean comparison
 
       _currentSplits.forEach((uid, amount) {
         _splitAmountControllers[uid] = TextEditingController(text: amount.toStringAsFixed(2));
       });
+
+      // NEW: If the expense is settled, disable editing from the start
+      if (_isSettled) {
+        _isEditing = false;
+      }
     } else {
       _titleController = TextEditingController();
       _amountController = TextEditingController();
       _selectedPayerId = null;
       _currentSplits = {};
+      _isSettled = false; // Default to false if expense doesn't exist
     }
     return expenseDoc;
   }
 
   Future<void> _updateExpense() async {
+    // NEW: Prevent update if settled
+    if (_isSettled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Cannot update a settled expense.")),
+      );
+      return;
+    }
+
     if (_titleController.text.isEmpty || _amountController.text.isEmpty || _selectedPayerId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please fill all fields.")),
@@ -218,8 +232,15 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
     }
   }
 
-  // NEW: Function to handle deleting the expense from this screen
   Future<void> _deleteExpenseFromDetails() async {
+    // NEW: Prevent deletion if settled (optional, depends on your business logic)
+    if (_isSettled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Cannot delete a settled expense.")),
+      );
+      return;
+    }
+
     final bool confirm = await showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -232,7 +253,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
               onPressed: () => Navigator.of(context).pop(false),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red), // Make it red for danger
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               child: const Text("Delete", style: TextStyle(color: Colors.white)),
               onPressed: () => Navigator.of(context).pop(true),
             ),
@@ -243,8 +264,8 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
 
     if (confirm) {
       try {
-        await widget.onDeleteExpense(widget.expenseId); // Call the provided delete callback
-        Navigator.of(context).pop(); // Pop this screen after deletion
+        await widget.onDeleteExpense(widget.expenseId);
+        Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Expense deleted successfully!")),
         );
@@ -266,19 +287,20 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
       appBar: AppBar(
         title: const Text("Expense Details"),
         actions: [
-          // NEW: Delete button
+          // Delete button (disabled if settled)
           IconButton(
-            icon: const Icon(Icons.delete_forever, color: Colors.red), // Use a more emphatic delete icon
-            onPressed: _deleteExpenseFromDetails,
+            icon: const Icon(Icons.delete_forever, color: Colors.red),
+            onPressed: _isSettled ? null : _deleteExpenseFromDetails, // NEW: Disable if settled
           ),
+          // Edit/Save button (disabled if settled)
           _isEditing
               ? IconButton(
             icon: const Icon(Icons.save),
-            onPressed: _updateExpense,
+            onPressed: _isSettled ? null : _updateExpense, // NEW: Disable if settled
           )
               : IconButton(
             icon: const Icon(Icons.edit),
-            onPressed: () {
+            onPressed: _isSettled ? null : () { // NEW: Disable if settled
               setState(() {
                 _isEditing = true;
               });
@@ -301,13 +323,16 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
             return const Center(child: Text('Expense not found.'));
           }
 
+          // Use _isSettled from state, which was set in _fetchExpenseData
+          final bool displayIsSettled = _isSettled; // Renamed for clarity in build method
+
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("Description:", style: Theme.of(context).textTheme.bodyLarge),
-                _isEditing
+                _isEditing && !displayIsSettled // NEW: Disable TextField if settled
                     ? TextField(
                   controller: _titleController,
                   decoration: const InputDecoration(hintText: "Expense Description"),
@@ -319,7 +344,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 const SizedBox(height: 16),
 
                 Text("Total Amount:", style: Theme.of(context).textTheme.bodyLarge),
-                _isEditing
+                _isEditing && !displayIsSettled // NEW: Disable TextField if settled
                     ? TextField(
                   controller: _amountController,
                   keyboardType: TextInputType.number,
@@ -332,7 +357,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 const SizedBox(height: 16),
 
                 Text("Paid by:", style: Theme.of(context).textTheme.bodyLarge),
-                _isEditing
+                _isEditing && !displayIsSettled // NEW: Disable Dropdown if settled
                     ? DropdownButtonFormField<String>(
                   value: _selectedPayerId,
                   decoration: const InputDecoration(border: OutlineInputBorder()),
@@ -355,6 +380,46 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // Mark as Settled Button (disabled if already settled)
+                ElevatedButton.icon(
+                  onPressed: displayIsSettled
+                      ? null // Disable button if settled
+                      : () async {
+                    final confirm = await showDialog(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: Text('Mark as Settled?'),
+                        content: Text('This will mark the expense as paid and remove it from split calculations. You will no longer be able to edit or delete it.'), // More descriptive
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancel')),
+                          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: Text('Confirm')),
+                        ],
+                      ),
+                    );
+
+                    if (confirm == true) {
+                      await FirebaseFirestore.instance
+                          .collection('trips')
+                          .doc(widget.tripId)
+                          .collection('expenses')
+                          .doc(widget.expenseId)
+                          .update({'settled': true});
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Expense marked as settled')),
+                      );
+
+                      // After updating in Firestore, update local state
+                      setState(() {
+                        _isSettled = true;
+                        _isEditing = false; // Exit edit mode
+                      });
+                    }
+                  },
+                  icon: Icon(Icons.check_circle),
+                  label: Text(displayIsSettled ? 'Settled' : 'Mark as Settled'), // Change label
+                ),
+
                 const Divider(height: 32),
                 Text("Breakdown", style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 10),
@@ -369,7 +434,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
 
                       return ListTile(
                         title: Text(userName),
-                        trailing: _isEditing
+                        trailing: _isEditing && !displayIsSettled // NEW: Disable TextField if settled
                             ? SizedBox(
                           width: 100,
                           child: TextField(

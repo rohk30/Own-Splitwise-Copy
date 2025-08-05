@@ -16,13 +16,14 @@ class _JoinTripScreenState extends State<JoinTripScreen> {
 
   Future<void> _joinTrip() async {
     final groupCode = _groupCodeController.text.trim().toUpperCase();
-    if (groupCode.length != 6 || !RegExp(r'^[A-Z0-9]+\$').hasMatch(groupCode)) {
+    if (groupCode.length != 6 || !RegExp(r'^[A-Z0-9]+$').hasMatch(groupCode)){
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid group code')));
       return;
     }
 
     setState(() => _isLoading = true);
     final user = FirebaseAuth.instance.currentUser;
+    final userName = user?.displayName ?? "Unnamed";
     final docRef = FirebaseFirestore.instance.collection('trips').doc(groupCode);
 
     try {
@@ -33,12 +34,25 @@ class _JoinTripScreenState extends State<JoinTripScreen> {
         return;
       }
 
-      final members = List<String>.from(snapshot['members']);
-      if (!members.contains(user?.uid)) {
-        await docRef.update({ 'members': FieldValue.arrayUnion([user?.uid]) });
+      final data = snapshot.data()!;
+      final members = List<String>.from(data['members'] ?? []);
+      final memberDetails = Map<String, dynamic>.from(data['memberDetails'] ?? {});
+
+      if (!members.contains(user!.uid)) {
+        await docRef.update({
+          'members': FieldValue.arrayUnion([user.uid]),
+          'memberDetails.${user.uid}': {
+            'name': userName,
+          }
+        });
+      } else if (!memberDetails.containsKey(user.uid)) {
+        await docRef.update({
+          'memberDetails.${user.uid}': {
+            'name': userName,
+          }
+        });
       }
 
-      // Save trip code locally
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('lastTripCode', groupCode);
 

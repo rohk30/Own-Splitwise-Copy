@@ -10,11 +10,13 @@ class AddExpenseScreen extends StatefulWidget {
   final String groupCode;
   final List<String> members;
   final Map<String, String> memberEmails;
+  // final bool settled;
 
   const AddExpenseScreen({
     required this.groupCode,
     required this.members,
     required this.memberEmails,
+    // settled = false,
     Key? key,
   }) : super(key: key);
 
@@ -104,6 +106,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       'splitType': _splitType,
       'splits': splits.map((uid, amt) => MapEntry(uid, amt.toDouble())),
       'timestamp': FieldValue.serverTimestamp(),
+      'settled': false,
     });
 
     Navigator.pop(context);
