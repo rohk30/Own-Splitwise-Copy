@@ -93,7 +93,7 @@ class SettlementHistoryScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    "When group members make payments to each other,\nthey'll appear here.",
+                    "When group members settle up their expenses,\nthey'll appear here.",
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.grey.shade500,
                     ),

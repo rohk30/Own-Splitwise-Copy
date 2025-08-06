@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:own_splitwise_copy/auth_gate.dart';
-import 'package:own_splitwise_copy/screens/home_screen.dart';
+// import 'package:own_splitwise_copy/screens/home_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/join_trip_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/my_trips_view.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/trip_details/trip_details_screen.dart';

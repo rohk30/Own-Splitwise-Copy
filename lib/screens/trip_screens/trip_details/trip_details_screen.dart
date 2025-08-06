@@ -1,11 +1,10 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/trip_details/show_settlement_history_screen.dart';
-// import 'package:intl/intl.dart';
 import 'add_expense_screen.dart';
 import 'expense_details_screen.dart'; // Ensure correct path
-// import 'package:intl/intl_browser.dart';
 
 
 class TripDetailsScreen extends StatefulWidget {
@@ -32,6 +31,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
   TextEditingController _settleAmountController = TextEditingController();
 
   bool _useReducedTransactions = false;
+  bool _isCalculating = false;
+  Timer? _debounceTimer;
+
 
   List<String> _currentMembers = [];
 
@@ -50,7 +52,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     _settlePayerEmailController.dispose();
     _settlePayeeEmailController.dispose();
     _settleAmountController.dispose();
+    _debounceTimer?.cancel(); // Cancel debounce timer
     super.dispose();
+  }
+
+  void _debouncedCalculateOverallSplit() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _calculateOverallSplit();
+    });
   }
 
   Future<void> _initializeTripData() async {
@@ -155,7 +165,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Expense deleted successfully!")),
       );
-      _calculateOverallSplit();
+      _debouncedCalculateOverallSplit();
+      // _calculateOverallSplit();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to delete expense: $e")),
@@ -175,7 +186,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Expense updated successfully!")),
       );
-      _calculateOverallSplit();
+      _debouncedCalculateOverallSplit();
+      // _calculateOverallSplit();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to update expense: $e")),
@@ -269,7 +281,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Expense marked as settled')),
                       );
-                      _calculateOverallSplit();
+                      // _calculateOverallSplit();
+                      _debouncedCalculateOverallSplit();
                     }
                   },
                 ),
@@ -349,25 +362,27 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       await FirebaseFirestore.instance
           .collection('trips')
           .doc(widget.groupCode)
-          .collection('settlements') // <--- NEW COLLECTION
+          .collection('settlements')
           .add({
         'payerUid': payerUid,
         'payeeUid': payeeUid,
         'amount': amount,
-        'timestamp': FieldValue.serverTimestamp(), // Use server timestamp for accurate ordering
+        'timestamp': FieldValue.serverTimestamp(),
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Settlement recorded successfully!")),
       );
 
-      _settlePayerEmailController.clearComposing();
+      _settlePayerEmailController.clear();
       _settlePayeeEmailController.clear();
       _settleAmountController.clear();
 
-      _buildSplitSummary();
+      _debouncedCalculateOverallSplit();
 
-      await _calculateOverallSplit(); // Recalculate balances
+      // _buildSplitSummary();
+
+      // await _calculateOverallSplit(); // Recalculate balances
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to record settlement: $e")),
@@ -512,6 +527,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
   }
 
   Future<void> _calculateOverallSplit() async {
+    if (_isCalculating) return;
+
     // 1. Fetch ALL unsettled expenses
     final expensesSnapshot = await FirebaseFirestore.instance
         .collection('trips')
@@ -571,7 +588,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     }
 
     // Now, process settlements
-
     // Claude:=
     for (var doc in settlementsSnapshot.docs) {
       final data = doc.data();
@@ -635,6 +651,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       final simplifiedSplit = _simplifyPairwiseDebts(rawSplit);
       setState(() => overallOwes = simplifiedSplit);
     }
+
+    setState(() {
+      _isCalculating = true;
+    });
   }
 
   Map<String, Map<String, double>> _simplifyPairwiseDebts(
@@ -711,7 +731,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
   }
 
   Widget _buildSplitSummary() {
-    _calculateOverallSplit();
+    // _calculateOverallSplit();
     List<String> summary = [];
     overallOwes.forEach((fromUid, payees) {
       payees.forEach((toUid, amount) {
@@ -724,14 +744,38 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     });
 
     if (summary.isEmpty && overallOwes.isNotEmpty) {
-      return const Text("All balances are settled or zero.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
+      return const Text("All balances are settled or zero.",
+          style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
     } else if (summary.isEmpty && overallOwes.isEmpty) {
-      return const Text("No balances to settle yet.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
+      return const Text("No balances to settle yet.",
+          style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
     }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: summary.map((s) => Text(s)).toList(),
     );
+
+    // List<String> summary = [];
+    // overallOwes.forEach((fromUid, payees) {
+    //   payees.forEach((toUid, amount) {
+    //     if (amount > 0.001) {
+    //       final fromNameOrEmail = _allUserEmails[fromUid] ?? fromUid;
+    //       final toNameOrEmail = _allUserEmails[toUid] ?? toUid;
+    //       summary.add("$fromNameOrEmail owes $toNameOrEmail ₹${amount.toStringAsFixed(2)}");
+    //     }
+    //   });
+    // });
+    //
+    // if (summary.isEmpty && overallOwes.isNotEmpty) {
+    //   return const Text("All balances are settled or zero.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
+    // } else if (summary.isEmpty && overallOwes.isEmpty) {
+    //   return const Text("No balances to settle yet.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
+    // }
+    // return Column(
+    //   crossAxisAlignment: CrossAxisAlignment.start,
+    //   children: summary.map((s) => Text(s)).toList(),
+    // );
   }
 
   Future<void> _addMemberToTrip(String memberEmail) async {
@@ -1100,7 +1144,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                 const SizedBox(height: 24),
                 const Text("Overall Balance:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                _buildSplitSummary(),
+                // _buildSplitSummary(),
+                OptimizedSplitSummary(
+                  overallOwes: overallOwes,
+                  memberEmails: _allUserEmails,
+                ),
                 const SizedBox(height: 20),
               ],
             ),
@@ -1119,10 +1167,49 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
               ),
             ),
           );
-          _calculateOverallSplit();
+          // _calculateOverallSplit();
+          _debouncedCalculateOverallSplit();
         },
         child: const Icon(Icons.add),
       ),
+    );
+  }
+}
+
+class OptimizedSplitSummary extends StatelessWidget {
+  final Map<String, Map<String, double>> overallOwes;
+  final Map<String, String> memberEmails;
+
+  const OptimizedSplitSummary({
+    super.key,
+    required this.overallOwes,
+    required this.memberEmails,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    List<String> summary = [];
+    overallOwes.forEach((fromUid, payees) {
+      payees.forEach((toUid, amount) {
+        if (amount > 0.001) {
+          final fromNameOrEmail = memberEmails[fromUid] ?? fromUid;
+          final toNameOrEmail = memberEmails[toUid] ?? toUid;
+          summary.add("$fromNameOrEmail owes $toNameOrEmail ₹${amount.toStringAsFixed(2)}");
+        }
+      });
+    });
+
+    if (summary.isEmpty && overallOwes.isNotEmpty) {
+      return const Text("All balances are settled or zero.",
+          style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
+    } else if (summary.isEmpty && overallOwes.isEmpty) {
+      return const Text("No balances to settle yet.",
+          style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: summary.map((s) => Text(s)).toList(),
     );
   }
 }
