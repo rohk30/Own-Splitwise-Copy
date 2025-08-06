@@ -352,14 +352,26 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: _selectedPayer,
-                      items: widget.members
-                          .map((uid) => DropdownMenuItem(
-                        value: uid,
-                        child: Text(_getUserDisplayName(uid)),
-                      ))
-                          .toList(),
-                      onChanged: (val) => setState(() => _selectedPayer = val),
+                      value: null,
+                      hint: Text('Select the payer'),
+                      items: [
+                        DropdownMenuItem(
+                          value: null,
+                          child: Text('Select the payer', style: TextStyle(color: Colors.grey)),
+                          enabled: false,
+                        ),
+                        ...widget.members.map((uid) => DropdownMenuItem(
+                          value: uid,
+                          child: Text(_getUserDisplayName(uid)),
+                        )).toList(),
+                      ],
+                      onChanged: (val) {
+                        if(val != null) {
+                          setState(() =>
+                            _selectedPayer = val
+                          );
+                        }
+                      },
                       decoration: const InputDecoration(labelText: "Paid By"),
                     ),
                   ),
@@ -437,8 +449,14 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _splitType,
+                value: null,
+                hint: const Text('Select a split type'),
                 items: const [
+                  DropdownMenuItem(
+                    value: null,
+                    child: Text('Select a split type', style: TextStyle(color: Colors.grey)),
+                    enabled: true,
+                  ),
                   DropdownMenuItem(value: 'Equal', child: Text('Split Equally')),
                   DropdownMenuItem(value: 'Manual', child: Text('Split Manually')),
                   DropdownMenuItem(value: 'Partial Equal', child: Text('Split Among Selected')),
