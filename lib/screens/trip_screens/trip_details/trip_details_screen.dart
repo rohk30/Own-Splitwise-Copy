@@ -1267,82 +1267,281 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
           Column(
             children: [
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                  child: StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('trips')
-                        .doc(widget.groupCode)
-                        .collection('expenses')
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('trips')
+                      .doc(widget.groupCode)
+                      .collection('expenses')
+                      .orderBy('timestamp', descending: true) // Add ordering like settlement history
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text("Loading expenses..."),
+                          ],
+                        ),
+                      );
+                    }
 
-                      if (snapshot.hasError) {
-                        return Center(child: Text('Error loading expenses: ${snapshot.error}'));
-                      }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: Colors.red.shade300,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Error loading expenses',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${snapshot.error}',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    }
 
-                      final expenses = snapshot.data!.docs;
+                    final expenses = snapshot.data!.docs;
 
-                      if (expenses.isEmpty) {
-                        return const Center(child: Text("No expenses yet. Add one!"));
-                      }
+                    if (expenses.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.receipt_long_outlined,
+                              size: 80,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              "No Expenses Yet",
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              "Start by adding your first expense\nto track group spending.",
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Colors.grey.shade500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    }
 
-                      return ListView.builder(
-                        itemCount: expenses.length,
-                        itemBuilder: (context, index) {
-                          final expense = expenses[index];
-                          final data = expense.data() as Map<String, dynamic>;
-
-                          final String title = data['description'] ?? 'No Title';
-                          final num amount = data['amount'] ?? 0;
-                          final String paidByUid = data['paidBy'] as String;
-                          final bool isSettled = data['settled'] == true;
-
-                          final paidByDisplay = _allUserNames[paidByUid] ?? paidByUid;
-
-                          return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            child: ListTile(
-                              title: Row(
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        return Future.delayed(const Duration(milliseconds: 300));
+                      },
+                      child: CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(child: Text(title)),
-                                  if (isSettled)
-                                    const Text(
-                                      '✅ Settled',
-                                      style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.receipt_long,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        "${expenses.length} Expense${expenses.length == 1 ? '' : 's'}",
+                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                          color: Theme.of(context).colorScheme.primary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    "All group expenses and who paid for them",
+                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: Colors.grey.shade600,
                                     ),
+                                  ),
                                 ],
                               ),
-                              subtitle: Text('₹${amount.toStringAsFixed(2)} paid by $paidByDisplay'),
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ExpenseDetailsScreen(
-                                      tripId: widget.groupCode,
-                                      expenseId: expense.id,
-                                      memberEmails: _allUserNames,
-                                      onUpdateExpense: updateExpense,
-                                      onDeleteExpense: _deleteExpense,
+                            ),
+                          ),
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                                  (context, index) {
+                                final expense = expenses[index];
+                                final data = expense.data() as Map<String, dynamic>;
+
+                                final String title = data['description'] ?? 'No Title';
+                                final num amount = data['amount'] ?? 0;
+                                final String paidByUid = data['paidBy'] as String;
+                                final bool isSettled = data['settled'] == true;
+                                final Timestamp? timestamp = data['timestamp'] as Timestamp?;
+
+                                final paidByDisplay = _allUserNames[paidByUid] ?? paidByUid;
+
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                  child: Card(
+                                    elevation: 2,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: () async {
+                                        await Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => ExpenseDetailsScreen(
+                                              tripId: widget.groupCode,
+                                              expenseId: expense.id,
+                                              memberEmails: _allUserNames,
+                                              onUpdateExpense: updateExpense,
+                                              onDeleteExpense: _deleteExpense,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      onLongPress: () {
+                                        _showExpenseOptions(expense.id, isSettled);
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(8),
+                                                  decoration: BoxDecoration(
+                                                    color: isSettled
+                                                        ? Colors.green.shade50
+                                                        : Colors.orange.shade50,
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: Icon(
+                                                    isSettled ? Icons.check_circle : Icons.receipt,
+                                                    color: isSettled
+                                                        ? Colors.green.shade600
+                                                        : Colors.orange.shade600,
+                                                    size: 20,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        title,
+                                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                          fontWeight: FontWeight.w600,
+                                                        ),
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      RichText(
+                                                        text: TextSpan(
+                                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                            color: Colors.grey.shade600,
+                                                          ),
+                                                          children: [
+                                                            const TextSpan(text: "Paid by "),
+                                                            TextSpan(
+                                                              text: paidByDisplay,
+                                                              style: const TextStyle(
+                                                                fontWeight: FontWeight.w600,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                                  children: [
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                      decoration: BoxDecoration(
+                                                        color: isSettled
+                                                            ? Colors.green.shade600
+                                                            : Theme.of(context).colorScheme.primary,
+                                                        borderRadius: BorderRadius.circular(20),
+                                                      ),
+                                                      child: Text(
+                                                        "₹${amount.toStringAsFixed(2)}",
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 16,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    if (isSettled) ...[
+                                                      const SizedBox(height: 4),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.green.shade100,
+                                                          borderRadius: BorderRadius.circular(12),
+                                                        ),
+                                                        child: Text(
+                                                          "✅ Settled",
+                                                          style: TextStyle(
+                                                            color: Colors.green.shade700,
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.w500,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 );
                               },
-                              onLongPress: () {
-                                _showExpenseOptions(expense.id, isSettled);
-                              },
+                              childCount: expenses.length,
                             ),
-                          );
-                        },
-                      );
-                    },
-                  ),
+                          ),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: 80), // Bottom padding
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
-              // Removed duplicate split-related widgets from Expenses tab
             ],
           ),
 
