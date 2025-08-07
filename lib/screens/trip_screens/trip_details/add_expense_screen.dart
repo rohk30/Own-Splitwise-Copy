@@ -1,22 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 
 class AddExpenseScreen extends StatefulWidget {
   final String groupCode;
   final List<String> members;
-  final Map<String, String> memberEmails;
+  final Map<String, String> memberEmails; // uid -> email mapping
+  final Map<String, String> memberNames;  // uid -> name mapping (NEW)
 
   const AddExpenseScreen({
     required this.groupCode,
     required this.members,
     required this.memberEmails,
+    required this.memberNames, // NEW parameter
     Key? key,
   }) : super(key: key);
 
@@ -33,7 +29,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final Map<String, TextEditingController> _manualAmountControllers = {};
   final Set<String> _selectedMembersForPartialSplit = {};
 
-  // NEW: For optimal payer suggestion
+  // For optimal payer suggestion
   String? _suggestedOptimalPayer;
   bool _isCalculatingOptimal = false;
   Map<String, double> _currentNetBalances = {};
@@ -45,14 +41,19 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       _manualAmountControllers[uid] = TextEditingController();
     }
     _selectedPayer = widget.members.isNotEmpty ? widget.members.first : null;
-    _loadCurrentBalances(); // Load existing balances
+    _loadCurrentBalances();
   }
 
+  // Updated: Use names for UI display
   String _getUserDisplayName(String uid) {
+    return widget.memberNames[uid] ?? widget.memberEmails[uid] ?? uid;
+  }
+
+  // Updated: Use emails for backend verification
+  String _getUserEmail(String uid) {
     return widget.memberEmails[uid] ?? uid;
   }
 
-  // NEW: Load current net balances from existing expenses
   Future<void> _loadCurrentBalances() async {
     try {
       final expensesSnapshot = await FirebaseFirestore.instance
@@ -92,7 +93,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         }
       }
 
-      // Process settlements (apply your corrected settlement logic)
+      // Process settlements
       for (var doc in settlementsSnapshot.docs) {
         final data = doc.data();
         final payerUid = data['payerUid'] as String? ?? '';
@@ -103,7 +104,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           continue;
         }
 
-        // Settlement reduces payer's debt (your corrected logic)
+        // Settlement reduces payer's debt
         netBalance[payerUid] = (netBalance[payerUid] ?? 0.0) + amount;
         netBalance[payeeUid] = (netBalance[payeeUid] ?? 0.0) - amount;
       }
@@ -116,7 +117,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     }
   }
 
-  // NEW: Calculate optimal payer suggestion
   Future<void> _calculateOptimalPayer() async {
     if (_amountController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -171,7 +171,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     }
   }
 
-  // NEW: Get current splits based on split type
   Map<String, double> _getCurrentSplits(double totalAmount) {
     final Map<String, double> splits = {};
 
@@ -200,28 +199,22 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     return splits;
   }
 
-  // NEW: Calculate number of transactions needed if this person pays
   int _calculateTransactionCount(String payer, Map<String, double> splits) {
-    // Create a copy of current balances
     final Map<String, double> testBalances = Map.from(_currentNetBalances);
 
-    // Apply the new expense with this payer
     for (final entry in splits.entries) {
       final userId = entry.key;
       final amount = entry.value;
 
-      if (userId == payer) continue; // Payer doesn't owe themselves
+      if (userId == payer) continue;
 
-      // User owes the payer this amount
       testBalances[userId] = (testBalances[userId] ?? 0.0) - amount;
       testBalances[payer] = (testBalances[payer] ?? 0.0) + amount;
     }
 
-    // Use the same min-transactions algorithm as your existing code
     return _calculateMinTransactionsCount(testBalances);
   }
 
-  // NEW: Calculate minimum transactions needed (similar to your existing heap-based algorithm)
   int _calculateMinTransactionsCount(Map<String, double> netBalance) {
     final owesHeap = PriorityQueue<MapEntry<String, double>>(
           (a, b) => b.value.compareTo(a.value),
@@ -245,7 +238,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       final owed = owedHeap.removeFirst();
 
       final minAmount = owe.value < owed.value ? owe.value : owed.value;
-      transactionCount++; // Each iteration represents one transaction
+      transactionCount++;
 
       final remainingOwe = owe.value - minAmount;
       final remainingOwed = owed.value - minAmount;
@@ -261,8 +254,26 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     return transactionCount;
   }
 
+  // Updated: Enhanced validation with email verification
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Validation: Check if payer is selected
+    if (_selectedPayer == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select who paid for this expense')),
+      );
+      return;
+    }
+
+    // Backend verification: Ensure payer email exists
+    final payerEmail = _getUserEmail(_selectedPayer!);
+    if (payerEmail == _selectedPayer) { // Fallback happened, email not found
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: Payer email not found for ${_getUserDisplayName(_selectedPayer!)}')),
+      );
+      return;
+    }
 
     final String title = _titleController.text.trim();
     final double totalAmount = double.parse(_amountController.text.trim());
@@ -284,7 +295,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     } else if (_splitType == 'Partial Equal') {
       if (_selectedMembersForPartialSplit.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select at least one member.')),
+          const SnackBar(content: Text('Please select at least one member for partial split')),
         );
         return;
       }
@@ -305,78 +316,146 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       return;
     }
 
-    await FirebaseFirestore.instance
-        .collection('trips')
-        .doc(widget.groupCode)
-        .collection('expenses')
-        .add({
-      'description': title,
-      'amount': totalAmount,
-      'paidBy': _selectedPayer,
-      'splitType': _splitType,
-      'splits': splits.map((uid, amt) => MapEntry(uid, amt.toDouble())),
-      'timestamp': FieldValue.serverTimestamp(),
-      'settled': false,
-    });
+    // Backend verification: Check all members have valid emails
+    for (var uid in splits.keys) {
+      if (splits[uid]! > 0) { // Only check members who have a share
+        final memberEmail = _getUserEmail(uid);
+        if (memberEmail == uid) { // Fallback happened
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: Email not found for ${_getUserDisplayName(uid)}')),
+          );
+          return;
+        }
+      }
+    }
 
-    Navigator.pop(context);
+    try {
+      // Store expense with enhanced metadata for verification
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('expenses')
+          .add({
+        'description': title,
+        'amount': totalAmount,
+        'paidBy': _selectedPayer!, // Store UID
+        'paidByEmail': payerEmail, // Store email for verification
+        'paidByName': _getUserDisplayName(_selectedPayer!), // Store name for display
+        'splitType': _splitType,
+        'splits': splits.map((uid, amt) => MapEntry(uid, amt.toDouble())),
+        'memberEmails': Map.fromEntries( // Store email mapping for verification
+            splits.entries
+                .where((entry) => entry.value > 0)
+                .map((entry) => MapEntry(entry.key, _getUserEmail(entry.key)))
+        ),
+        'memberNames': Map.fromEntries( // Store name mapping for display
+            splits.entries
+                .where((entry) => entry.value > 0)
+                .map((entry) => MapEntry(entry.key, _getUserDisplayName(entry.key)))
+        ),
+        'timestamp': FieldValue.serverTimestamp(),
+        'settled': false,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Expense "${title}" added successfully!')),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to add expense: $e')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Add Expense")),
+      appBar: AppBar(
+        title: const Text("Add Expense"),
+        backgroundColor: Colors.teal.shade50,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: ListView(
             children: [
+              // Expense Title
               TextFormField(
                 controller: _titleController,
-                decoration: const InputDecoration(labelText: "Expense Title"),
+                decoration: const InputDecoration(
+                  labelText: "Expense Title",
+                  border: OutlineInputBorder(),
+                  helperText: 'e.g., Dinner at restaurant',
+                ),
                 validator: (val) => val == null || val.isEmpty ? "Required" : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+
+              // Total Amount
               TextFormField(
                 controller: _amountController,
-                decoration: const InputDecoration(labelText: "Total Amount"),
+                decoration: const InputDecoration(
+                  labelText: "Total Amount",
+                  border: OutlineInputBorder(),
+                  prefixText: '₹',
+                  helperText: 'Enter the total expense amount',
+                ),
                 keyboardType: TextInputType.number,
                 validator: (val) =>
                 val == null || double.tryParse(val) == null ? "Enter valid amount" : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
               // Paid By dropdown with optimal payer suggestion
               Row(
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: null,
-                      hint: Text('Select the payer'),
-                      items: [
-                        DropdownMenuItem(
-                          value: null,
-                          child: Text('Select the payer', style: TextStyle(color: Colors.grey)),
-                          enabled: false,
+                      value: _selectedPayer,
+                      hint: const Text('Select who paid'),
+                      items: widget.members.map((uid) => DropdownMenuItem(
+                        value: uid,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _getUserDisplayName(uid),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 15
+
+                              ),
+                            ),
+                            // Text(
+                            //   _getUserEmail(uid),
+                            //   style: TextStyle(
+                            //     fontSize: 12,
+                            //     color: Colors.grey.shade600,
+                            //   ),
+                            // ),
+                          ],
                         ),
-                        ...widget.members.map((uid) => DropdownMenuItem(
-                          value: uid,
-                          child: Text(_getUserDisplayName(uid)),
-                        )).toList(),
-                      ],
+                      )).toList(),
                       onChanged: (val) {
-                        if(val != null) {
-                          setState(() =>
-                            _selectedPayer = val
-                          );
-                        }
+                        setState(() {
+                          _selectedPayer = val;
+                        });
                       },
-                      decoration: const InputDecoration(labelText: "Paid By"),
+                      decoration: const InputDecoration(
+                        labelText: "Paid By",
+                        border: OutlineInputBorder(),
+                        helperText: 'Select who made the payment',
+                      ),
+                      validator: (val) => val == null ? "Please select who paid" : null,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // NEW: Optimal payer suggestion button
+
+                  // Optimal payer suggestion button
                   IconButton(
                     onPressed: _isCalculatingOptimal ? null : _calculateOptimalPayer,
                     icon: _isCalculatingOptimal
@@ -391,10 +470,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 ],
               ),
 
-              // NEW: Optimal payer suggestion display
+              // Optimal payer suggestion display
               if (_suggestedOptimalPayer != null)
                 Container(
-                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  margin: const EdgeInsets.symmetric(vertical: 16),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Colors.blue.shade50,
@@ -417,7 +496,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 4),
                             Text(
                               _getUserDisplayName(_suggestedOptimalPayer!),
                               style: TextStyle(
@@ -426,6 +505,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                            // Text(
+                            //   _getUserEmail(_suggestedOptimalPayer!),
+                            //   style: TextStyle(
+                            //     fontSize: 12,
+                            //     color: Colors.blue.shade600,
+                            //   ),
+                            // ),
                           ],
                         ),
                       ),
@@ -447,16 +533,12 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                   ),
                 ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
+
+              // Split Type
               DropdownButtonFormField<String>(
-                value: null,
-                hint: const Text('Select a split type'),
+                value: _splitType,
                 items: const [
-                  DropdownMenuItem(
-                    value: null,
-                    child: Text('Select a split type', style: TextStyle(color: Colors.grey)),
-                    enabled: true,
-                  ),
                   DropdownMenuItem(value: 'Equal', child: Text('Split Equally')),
                   DropdownMenuItem(value: 'Manual', child: Text('Split Manually')),
                   DropdownMenuItem(value: 'Partial Equal', child: Text('Split Among Selected')),
@@ -464,7 +546,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 onChanged: (val) {
                   setState(() {
                     _splitType = val!;
-                    // _suggestedOptimalPayer = null; // Clear suggestion when split type changes
                     if (_splitType != 'Partial Equal') {
                       _selectedMembersForPartialSplit.clear();
                     }
@@ -473,60 +554,94 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                         controller.clear();
                       });
                     }
+                    _suggestedOptimalPayer = null; // Clear suggestion when split type changes
                   });
                 },
-                decoration: const InputDecoration(labelText: "Split Type"),
+                decoration: const InputDecoration(
+                  labelText: "Split Type",
+                  border: OutlineInputBorder(),
+                  helperText: 'Choose how to split the expense',
+                ),
               ),
               const SizedBox(height: 20),
-              if (_splitType == 'Manual') ...widget.members.map((uid) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: TextFormField(
-                    controller: _manualAmountControllers[uid],
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: "${_getUserDisplayName(uid)}'s share",
-                    ),
-                    onChanged: (value) {
-                      // Clear suggestion when manual amounts change
-                      if (_suggestedOptimalPayer != null) {
-                        setState(() {
-                          // _suggestedOptimalPayer = null;
-                        });
-                      }
-                    },
-                  ),
-                );
-              }).toList(),
-              if (_splitType == 'Partial Equal')
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Select members to split among:", style: TextStyle(fontSize: 16)),
-                    const SizedBox(height: 8),
-                    ...widget.members.map((uid) {
-                      return CheckboxListTile(
-                        title: Text(_getUserDisplayName(uid)),
-                        value: _selectedMembersForPartialSplit.contains(uid),
-                        onChanged: (selected) {
+
+              // Manual split inputs
+              if (_splitType == 'Manual') ...[
+                const Text(
+                  "Enter each person's share:",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 12),
+                ...widget.members.map((uid) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: TextFormField(
+                      controller: _manualAmountControllers[uid],
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: "${_getUserDisplayName(uid)}'s share",
+                        border: const OutlineInputBorder(),
+                        prefixText: '₹',
+                        // helperText: _getUserEmail(uid),
+                      ),
+                      onChanged: (value) {
+                        if (_suggestedOptimalPayer != null) {
                           setState(() {
-                            if (selected == true) {
-                              _selectedMembersForPartialSplit.add(uid);
-                            } else {
-                              _selectedMembersForPartialSplit.remove(uid);
-                            }
-                            // Clear suggestion when selection changes
                             _suggestedOptimalPayer = null;
                           });
-                        },
-                      );
-                    }).toList(),
-                  ],
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
+              ],
+
+              // Partial split selection
+              if (_splitType == 'Partial Equal') ...[
+                const Text(
+                  "Select members to split among:",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                 ),
+                const SizedBox(height: 12),
+                ...widget.members.map((uid) {
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    child: CheckboxListTile(
+                      title: Text(_getUserDisplayName(uid)),
+                      // subtitle: Text(_getUserEmail(uid)),
+                      value: _selectedMembersForPartialSplit.contains(uid),
+                      onChanged: (selected) {
+                        setState(() {
+                          if (selected == true) {
+                            _selectedMembersForPartialSplit.add(uid);
+                          } else {
+                            _selectedMembersForPartialSplit.remove(uid);
+                          }
+                          _suggestedOptimalPayer = null;
+                        });
+                      },
+                    ),
+                  );
+                }).toList(),
+              ],
+
               const SizedBox(height: 24),
+
+              // Submit button
               ElevatedButton(
                 onPressed: _submit,
-                child: const Text("Add Expense"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  "Add Expense",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
               ),
             ],
           ),

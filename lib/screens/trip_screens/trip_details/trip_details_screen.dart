@@ -24,6 +24,7 @@ class TripDetailsScreen extends StatefulWidget {
 class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   Map<String, String> _allUserEmails = {};
+  Map<String, String> _allUserNames = {};
   Map<String, Map<String, double>> overallOwes = {};
   TextEditingController _addMemberEmailController = TextEditingController();
   TextEditingController _settlePayerEmailController = TextEditingController();
@@ -33,6 +34,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
   bool _useReducedTransactions = false;
   bool _isCalculating = false;
   Timer? _debounceTimer;
+  bool _isInitialized = false;
 
 
   List<String> _currentMembers = [];
@@ -64,20 +66,32 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
   }
 
   Future<void> _initializeTripData() async {
-    await _fetchAllMemberEmails();
-    await _calculateOverallSplit();
+    try {
+      await _fetchAllMemberData();
+      await _calculateOverallSplit();
+      setState(() {
+        _isInitialized = true; // Add this
+      });
+    } catch (e) {
+      print("Error initializing trip data: $e");
+      setState(() {
+        _isInitialized = true; // Still set to true to prevent infinite loading
+      });
+    }
   }
 
   List<MapEntry<String, String>> get sortedMembers {
-    final List<Map<String, String>> entries = _allUserEmails.entries
+    if (_allUserNames.isEmpty) return [];
+
+    final List<Map<String, String>> entries = _allUserNames.entries
         .where((entry) => _currentMembers.contains(entry.key))
-        .map((e) => {'uid': e.key, 'email': e.value})
+        .map((e) => {'uid': e.key, 'name': e.value})
         .toList();
-    entries.sort((a, b) => a['email']!.compareTo(b['email']!));
+    entries.sort((a, b) => a['name']!.compareTo(b['name']!));
     // Return a list of MapEntry for consistency with how it was used before,
     // though the actual type is now Map<String, String> for the entry itself.
     // This conversion is a bit redundant but maintains the previous getter signature.
-    return entries.map((e) => MapEntry(e['uid']!, e['email']!)).toList();
+    return entries.map((e) => MapEntry(e['uid']!, e['name']!)).toList();
   }
 
   Future<void> _fetchAllMemberEmails() async {
@@ -103,13 +117,52 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     });
   }
 
+  Future<void> _fetchAllMemberData() async {
+    if (_currentMembers.isEmpty) {
+      setState(() {
+        _allUserEmails = {};
+        _allUserNames = {};
+      });
+      return;
+    }
+
+    final Map<String, String> fetchedEmails = {};
+    final Map<String, String> fetchedNames = {};
+
+    try {
+      for (String uid in _currentMembers) {
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        if (userDoc.exists) {
+          fetchedEmails[uid] = userDoc['email'] ?? uid;
+          fetchedNames[uid] = userDoc['name'] ?? userDoc['email'] ?? uid;
+        } else {
+          fetchedEmails[uid] = 'Unknown User';
+          fetchedNames[uid] = 'Unknown User';
+        }
+      }
+      setState(() {
+        _allUserEmails = fetchedEmails;
+        _allUserNames = fetchedNames;
+      });
+    } catch (e) {
+      print("Error fetching member data: $e");
+      // Set fallback data to prevent infinite loading
+      setState(() {
+        for (String uid in _currentMembers) {
+          _allUserEmails[uid] = 'Unknown User';
+          _allUserNames[uid] = 'Unknown User';
+        }
+      });
+    }
+  }
+
   Future<void> _removeMember(String userIdToRemove) async {
     final bool confirm = await showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text("Remove Member"),
-          content: Text("Are you sure you want to remove ${_allUserEmails[userIdToRemove] ?? 'this member'}? This will not remove their past expenses."),
+          content: Text("Are you sure you want to remove ${_allUserNames[userIdToRemove] ?? 'this member'}? This will not remove their past expenses."),
           actions: <Widget>[
             TextButton(
               child: const Text("Cancel"),
@@ -214,7 +267,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                       builder: (_) => ExpenseDetailsScreen(
                         tripId: widget.groupCode,
                         expenseId: expenseId,
-                        memberEmails: _allUserEmails,
+                        memberEmails: _allUserNames,
                         onUpdateExpense: updateExpense,
                         onDeleteExpense: _deleteExpense,
                         initialEditing: true,
@@ -294,6 +347,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
   }
 
   // NEW: _handleManualSettlement method (modified to use 'settlements' collection)
+  /*   LAST NON WORKING ONE
   Future<void> _handleManualSettlement() async {
     final payerEmail = _settlePayerEmailController.text.trim();
     final payeeEmail = _settlePayeeEmailController.text.trim();
@@ -318,7 +372,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     String? payeeUid;
 
     // Use Future.wait to fetch both UIDs concurrently
-    await Future.wait([
+    /*await Future.wait([
       FirebaseFirestore.instance.collection('users').where('email', isEqualTo: payerEmail).limit(1).get().then((snapshot) {
         if (snapshot.docs.isNotEmpty) {
           payerUid = snapshot.docs.first.id;
@@ -330,6 +384,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
         }
       }),
     ]);
+     */
+
+    _allUserNames.forEach((uid, name) {
+      if (name == payerEmail) payerUid = uid;
+      if (name == payeeEmail) payeeUid = uid;
+    });
 
     if (payerUid == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -389,7 +449,134 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       );
     }
   }
+   */
 
+  Future<void> _handleManualSettlement() async {
+    final payerEmail = _settlePayerEmailController.text.trim();
+    final payeeEmail = _settlePayeeEmailController.text.trim();
+    final amountText = _settleAmountController.text.trim();
+
+    if (payerEmail.isEmpty || payeeEmail.isEmpty || amountText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please fill all settlement fields.")),
+      );
+      return;
+    }
+
+    final double? amount = double.tryParse(amountText);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter a valid positive amount.")),
+      );
+      return;
+    }
+
+    String? payerUid;
+    String? payeeUid;
+
+    // Find UIDs from names
+    _allUserNames.forEach((uid, name) {
+      if (name == payerEmail) payerUid = uid;
+      if (name == payeeEmail) payeeUid = uid;
+    });
+
+    if (payerUid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Payer '$payerEmail' not found among trip members.")),
+      );
+      return;
+    }
+    if (payeeUid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Payee '$payeeEmail' not found among trip members.")),
+      );
+      return;
+    }
+    if (!_currentMembers.contains(payerUid) || !_currentMembers.contains(payeeUid)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Both payer and payee must be current trip members.")),
+      );
+      return;
+    }
+
+    if (payerUid == payeeUid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Payer and Payee cannot be the same person.")),
+      );
+      return;
+    }
+
+    // OPTIONAL: Validate that settlement doesn't exceed current debt
+    final currentDebt = overallOwes[payerUid]?[payeeUid] ?? 0.0;
+    if (currentDebt == 0.0) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("No Existing Debt"),
+          content: Text(
+              "${_allUserNames[payerUid]} doesn't currently owe ${_allUserNames[payeeUid]} any money. "
+                  "Recording this settlement will create a debt in the opposite direction. Continue?"
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Continue")),
+          ],
+        ),
+      ) ?? false;
+
+      if (!confirm) return;
+    } else if (amount > currentDebt + 0.01) { // Small buffer for floating point
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Settlement Exceeds Debt"),
+          content: Text(
+              "${_allUserNames[payerUid]} currently owes ${_allUserNames[payeeUid]} ₹${currentDebt.toStringAsFixed(2)}, "
+                  "but you're recording a settlement of ₹${amount.toStringAsFixed(2)}. "
+                  "The excess will become a debt in the opposite direction. Continue?"
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Continue")),
+          ],
+        ),
+      ) ?? false;
+
+      if (!confirm) return;
+    }
+
+    try {
+      // Store settlement in the 'settlements' subcollection
+      await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('settlements')
+          .add({
+        'payerUid': payerUid,
+        'payeeUid': payeeUid,
+        'amount': amount,
+        'timestamp': FieldValue.serverTimestamp(),
+        'description': 'Manual settlement', // Optional: add description
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Settlement recorded successfully!")),
+      );
+
+      // Clear form
+      _settlePayerEmailController.clear();
+      _settlePayeeEmailController.clear();
+      _settleAmountController.clear();
+
+      // Recalculate balances
+      _debouncedCalculateOverallSplit();
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to record settlement: $e")),
+      );
+    }
+  }
   // NEW: _showSettlementHistory method
   /*
   void _showSettlementHistory() {
@@ -467,7 +654,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       MaterialPageRoute(
         builder: (context) => SettlementHistoryScreen(
           groupCode: widget.groupCode,
-          memberEmails: _allUserEmails,
+          memberEmails: _allUserNames,
         ),
       ),
     );
@@ -526,137 +713,232 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     }
   }
 
+  // Calculate overall split
+  /*
   Future<void> _calculateOverallSplit() async {
     if (_isCalculating) return;
-
-    // 1. Fetch ALL unsettled expenses
-    final expensesSnapshot = await FirebaseFirestore.instance
-        .collection('trips')
-        .doc(widget.groupCode)
-        .collection('expenses')
-        .where('settled', isEqualTo: false)
-        .get();
-
-    // 2. Fetch ALL settlements
-    final settlementsSnapshot = await FirebaseFirestore.instance
-        .collection('trips')
-        .doc(widget.groupCode)
-        .collection('settlements') // <--- Fetch from new collection
-        .get();
-
-    final Map<String, double> netBalance = {};
-    for (var memberId in _currentMembers) {
-      netBalance[memberId] = 0.0;
-    }
-
-    // Initialize rawSplit for all current members
-    final Map<String, Map<String, double>> rawSplit = {};
-    for (var memberId1 in _currentMembers) {
-      rawSplit.putIfAbsent(memberId1, () => {});
-      for (var memberId2 in _currentMembers) {
-        if (memberId1 != memberId2) {
-          rawSplit[memberId1]![memberId2] = 0.0;
-        }
-      }
-    }
-
-    // Process expenses first
-    for (var doc in expensesSnapshot.docs) {
-      final data = doc.data();
-      final payerId = data['paidBy'] as String? ?? '';
-      final splits = (data['splits'] ?? {}) as Map<String, dynamic>;
-
-      if (!_currentMembers.contains(payerId)) {
-        continue;
-      }
-
-      for (final entry in splits.entries) {
-        final userId = entry.key as String;
-        final amount = (entry.value as num?)?.toDouble() ?? 0.0;
-
-        if (!_currentMembers.contains(userId)) {
-          continue;
-        }
-
-        // Normal expense: payer paid for userId
-        netBalance[userId] = (netBalance[userId] ?? 0.0) - amount;
-        netBalance[payerId] = (netBalance[payerId] ?? 0.0) + amount;
-
-        rawSplit.putIfAbsent(userId, () => {});
-        rawSplit[userId]![payerId] = (rawSplit[userId]![payerId] ?? 0.0) + amount;
-      }
-    }
-
-    // Now, process settlements
-    // Claude:=
-    for (var doc in settlementsSnapshot.docs) {
-      final data = doc.data();
-      final payerUid = data['payerUid'] as String? ?? '';
-      final payeeUid = data['payeeUid'] as String? ?? '';
-      final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
-
-      if (!_currentMembers.contains(payerUid) || !_currentMembers.contains(payeeUid)) {
-        continue;
-      }
-
-      // CORRECTED: A settlement means payerUid paid amount to payeeUid.
-      // This should ONLY reduce payerUid's debt to payeeUid.
-      // Don't create a reverse debt.
-
-      rawSplit.putIfAbsent(payerUid, () => {});
-      rawSplit[payerUid]![payeeUid] = (rawSplit[payerUid]![payeeUid] ?? 0.0) - amount;
-
-      // REMOVED: Don't add to rawSplit[payeeUid][payerUid]
-      // The original buggy code was:
-      // rawSplit.putIfAbsent(payeeUid, () => {});
-      // rawSplit[payeeUid]![payerUid] = (rawSplit[payeeUid]![payerUid] ?? 0.0) + amount;
-    }
-
-    /*
-    for (var doc in settlementsSnapshot.docs) {
-      final data = doc.data();
-      final payerUid = data['payerUid'] as String? ?? '';
-      final payeeUid = data['payeeUid'] as String? ?? '';
-      final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
-
-      if (!_currentMembers.contains(payerUid) || !_currentMembers.contains(payeeUid)) {
-        continue;
-      }
-
-      // A settlement means payerUid paid amount to payeeUid.
-      // This reduces the debt of payerUid to payeeUid (or vice-versa, depending on initial state)
-      // If Payer owes Payee, this reduces Payer's debt.
-      // If Payee owes Payer, this increases Payee's debt (or reduces what Payer is owed).
-
-      // Update net balances:
-      // Payer's balance becomes less negative (or more positive, if they were owed)
-    // netBalance[payerUid] = (netBalance[payerUid] ?? 0.0) - amount;
-      // Payee's balance becomes more negative (or less positive, if they owed)
-    // netBalance[payeeUid] = (netBalance[payeeUid] ?? 0.0) + amount;
-
-      // Update raw split: Payer (payerUid) now owes Payee (payeeUid) LESS
-      rawSplit.putIfAbsent(payerUid, () => {});
-      rawSplit[payerUid]![payeeUid] = (rawSplit[payerUid]![payeeUid] ?? 0.0) - amount;
-
-      // And Payee (payeeUid) is owed LESS by Payer (payerUid)
-      rawSplit.putIfAbsent(payeeUid, () => {});
-      rawSplit[payeeUid]![payerUid] = (rawSplit[payeeUid]![payerUid] ?? 0.0) + amount;
-    }
-    */
-
-    if (_useReducedTransactions) {
-      final reducedResult = _calculateMinTransactionsSplit(netBalance);
-      setState(() => overallOwes = reducedResult);
-    } else {
-      final simplifiedSplit = _simplifyPairwiseDebts(rawSplit);
-      setState(() => overallOwes = simplifiedSplit);
-    }
 
     setState(() {
       _isCalculating = true;
     });
+
+    try {
+      // 1. Fetch ALL unsettled expenses
+      final expensesSnapshot = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('expenses')
+          .where('settled', isEqualTo: false)
+          .get();
+
+      // 2. Fetch ALL settlements
+      final settlementsSnapshot = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('settlements') // <--- Fetch from new collection
+          .get();
+
+      final Map<String, double> netBalance = {};
+      for (var memberId in _currentMembers) {
+        netBalance[memberId] = 0.0;
+      }
+
+      // Initialize rawSplit for all current members
+      final Map<String, Map<String, double>> rawSplit = {};
+      for (var memberId1 in _currentMembers) {
+        rawSplit.putIfAbsent(memberId1, () => {});
+        for (var memberId2 in _currentMembers) {
+          if (memberId1 != memberId2) {
+            rawSplit[memberId1]![memberId2] = 0.0;
+          }
+        }
+      }
+
+      // Process expenses first
+      for (var doc in expensesSnapshot.docs) {
+        final data = doc.data();
+        final payerId = data['paidBy'] as String? ?? '';
+        final splits = (data['splits'] ?? {}) as Map<String, dynamic>;
+
+        if (!_currentMembers.contains(payerId)) {
+          continue;
+        }
+
+        for (final entry in splits.entries) {
+          final userId = entry.key as String;
+          final amount = (entry.value as num?)?.toDouble() ?? 0.0;
+
+          if (!_currentMembers.contains(userId)) {
+            continue;
+          }
+
+          // Normal expense: payer paid for userId
+          netBalance[userId] = (netBalance[userId] ?? 0.0) - amount;
+          netBalance[payerId] = (netBalance[payerId] ?? 0.0) + amount;
+
+          rawSplit.putIfAbsent(userId, () => {});
+          rawSplit[userId]![payerId] = (rawSplit[userId]![payerId] ?? 0.0) + amount;
+        }
+      }
+
+      // Now, process settlements
+      // Claude:=
+      for (var doc in settlementsSnapshot.docs) {
+        final data = doc.data();
+        final payerUid = data['payerUid'] as String? ?? '';
+        final payeeUid = data['payeeUid'] as String? ?? '';
+        final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+
+        if (!_currentMembers.contains(payerUid) || !_currentMembers.contains(payeeUid)) {
+          continue;
+        }
+
+        rawSplit.putIfAbsent(payerUid, () => {});
+        rawSplit[payerUid]![payeeUid] = (rawSplit[payerUid]![payeeUid] ?? 0.0) - amount;
+
+      }
+
+      if (_useReducedTransactions) {
+        final reducedResult = _calculateMinTransactionsSplit(netBalance);
+        setState(() => overallOwes = reducedResult);
+      } else {
+        final simplifiedSplit = _simplifyPairwiseDebts(rawSplit);
+        setState(() => overallOwes = simplifiedSplit);
+      }
+      OptimizedSplitSummary(
+        overallOwes: overallOwes,
+        memberNames: _allUserNames,
+      );
+    } catch (e) {
+      print("Error calculating split: $e");
+    } finally {
+      setState(() {
+        _isCalculating = false; // Add this
+      });
+    }
+
+  }
+  */
+
+  Future<void> _calculateOverallSplit() async {
+    if (_isCalculating) return;
+
+    setState(() {
+      _isCalculating = true;
+    });
+
+    try {
+      // 1. Fetch ALL unsettled expenses
+      final expensesSnapshot = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('expenses')
+          .where('settled', isEqualTo: false)
+          .get();
+
+      // 2. Fetch ALL settlements
+      final settlementsSnapshot = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('settlements')
+          .get();
+
+      // Use net balance approach (consistent with AddExpenseScreen)
+      final Map<String, double> netBalance = {};
+      for (var memberId in _currentMembers) {
+        netBalance[memberId] = 0.0;
+      }
+
+      // Initialize rawSplit for non-reduced transactions
+      final Map<String, Map<String, double>> rawSplit = {};
+      for (var memberId1 in _currentMembers) {
+        rawSplit.putIfAbsent(memberId1, () => {});
+        for (var memberId2 in _currentMembers) {
+          if (memberId1 != memberId2) {
+            rawSplit[memberId1]![memberId2] = 0.0;
+          }
+        }
+      }
+
+      // Process expenses
+      for (var doc in expensesSnapshot.docs) {
+        final data = doc.data();
+        final payerId = data['paidBy'] as String? ?? '';
+        final splits = (data['splits'] ?? {}) as Map<String, dynamic>;
+
+        if (!_currentMembers.contains(payerId)) {
+          continue;
+        }
+
+        for (final entry in splits.entries) {
+          final userId = entry.key as String;
+          final amount = (entry.value as num?)?.toDouble() ?? 0.0;
+
+          if (!_currentMembers.contains(userId)) {
+            continue;
+          }
+
+          // Update net balances
+          netBalance[userId] = (netBalance[userId] ?? 0.0) - amount; // User owes this amount
+          netBalance[payerId] = (netBalance[payerId] ?? 0.0) + amount; // Payer is owed this amount
+
+          // Update raw split for pairwise tracking
+          rawSplit.putIfAbsent(userId, () => {});
+          rawSplit[userId]![payerId] = (rawSplit[userId]![payerId] ?? 0.0) + amount;
+        }
+      }
+
+      // Process settlements - FIXED LOGIC
+      for (var doc in settlementsSnapshot.docs) {
+        final data = doc.data();
+        final payerUid = data['payerUid'] as String? ?? '';
+        final payeeUid = data['payeeUid'] as String? ?? '';
+        final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+
+        if (!_currentMembers.contains(payerUid) || !_currentMembers.contains(payeeUid)) {
+          continue;
+        }
+
+        // CORRECTED: Settlement reduces the payer's debt to payee
+        // Net balance approach (consistent with AddExpenseScreen)
+        netBalance[payerUid] = (netBalance[payerUid] ?? 0.0) + amount; // Payer's debt decreases
+        netBalance[payeeUid] = (netBalance[payeeUid] ?? 0.0) - amount; // Payee's owed amount decreases
+
+        // Raw split approach: reduce the existing debt between payer and payee
+        rawSplit.putIfAbsent(payerUid, () => {});
+        rawSplit[payerUid]![payeeUid] = (rawSplit[payerUid]![payeeUid] ?? 0.0) - amount;
+
+        // Ensure we don't go negative (settlement can't exceed existing debt)
+        if (rawSplit[payerUid]![payeeUid]! < 0) {
+          // If settlement exceeds debt, the excess becomes a debt in the other direction
+          final excess = -rawSplit[payerUid]![payeeUid]!;
+          rawSplit[payerUid]![payeeUid] = 0.0;
+
+          rawSplit.putIfAbsent(payeeUid, () => {});
+          rawSplit[payeeUid]![payerUid] = (rawSplit[payeeUid]![payerUid] ?? 0.0) + excess;
+        }
+      }
+
+      // Choose calculation method based on toggle
+      if (_useReducedTransactions) {
+        final reducedResult = _calculateMinTransactionsSplit(netBalance);
+        setState(() => overallOwes = reducedResult);
+      } else {
+        final simplifiedSplit = _simplifyPairwiseDebts(rawSplit);
+        setState(() => overallOwes = simplifiedSplit);
+      }
+
+    } catch (e) {
+      print("Error calculating split: $e");
+    } finally {
+      setState(() {
+        _isCalculating = false;
+      });
+    }
   }
 
+  // Simplify Pairwise Debts
+  /*
   Map<String, Map<String, double>> _simplifyPairwiseDebts(
       Map<String, Map<String, double>> rawSplit) {
     final Map<String, Map<String, double>> result = {};
@@ -686,6 +968,38 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
         }
       }
     }
+    return result;
+  }
+   */
+
+  Map<String, Map<String, double>> _simplifyPairwiseDebts(
+      Map<String, Map<String, double>> rawSplit) {
+    final Map<String, Map<String, double>> result = {};
+
+    Set<String> allInvolvedUids = {};
+    rawSplit.keys.forEach((uid) => allInvolvedUids.add(uid));
+    rawSplit.values.forEach((toMap) => toMap.keys.forEach((uid) => allInvolvedUids.add(uid)));
+
+    for (final fromUid in allInvolvedUids) {
+      for (final toUid in allInvolvedUids) {
+        if (fromUid == toUid) continue;
+
+        final amountFromTo = rawSplit[fromUid]?[toUid] ?? 0.0;
+        final amountToFrom = rawSplit[toUid]?[fromUid] ?? 0.0;
+
+        final netAmount = amountFromTo - amountToFrom;
+
+        if (netAmount.abs() > 0.01) { // Use 0.01 instead of 0.001 for currency
+          if (netAmount > 0) { // fromUid owes toUid
+            result.putIfAbsent(fromUid, () => {});
+            result[fromUid]![toUid] = netAmount;
+          }
+          // Note: We don't add the reverse case here because we'll process it
+          // when we iterate with fromUid and toUid swapped
+        }
+      }
+    }
+
     return result;
   }
 
@@ -736,8 +1050,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     overallOwes.forEach((fromUid, payees) {
       payees.forEach((toUid, amount) {
         if (amount > 0.001) {
-          final fromNameOrEmail = _allUserEmails[fromUid] ?? fromUid;
-          final toNameOrEmail = _allUserEmails[toUid] ?? toUid;
+          final fromNameOrEmail = _allUserNames[fromUid] ?? fromUid;
+          final toNameOrEmail = _allUserNames[toUid] ?? toUid;
           summary.add("$fromNameOrEmail owes $toNameOrEmail ₹${amount.toStringAsFixed(2)}");
         }
       });
@@ -869,36 +1183,41 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16), // Make dialog wider
           title: const Text("Trip Members"),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: [
-                if (sortedMembers.isEmpty)
-                  const Text("No members yet.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-                ...sortedMembers.map((entry) {
-                  final String memberUid = entry.key;
-                  final String memberEmail = entry.value;
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    child: ListTile(
-                      title: Text(memberEmail),
-                      leading: const Icon(Icons.person),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _removeMember(memberUid),
+          content: SizedBox(
+            width: double.maxFinite, // Take full available width
+            child: SingleChildScrollView(
+              child: ListBody(
+                children: [
+                  if (sortedMembers.isEmpty)
+                    const Text("No members yet.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+                  ...sortedMembers.map((entry) {
+                    final String memberUid = entry.key;
+                    final String memberName = entry.value;
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), // More padding
+                        title: Text(memberName),
+                        leading: const Icon(Icons.person),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _removeMember(memberUid),
+                        ),
                       ),
-                    ),
-                  );
-                }).toList(),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                    _showAddMemberDialog();
-                  },
-                  child: const Text("Add Member"),
-                ),
-              ],
+                    );
+                  }).toList(),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                      _showAddMemberDialog();
+                    },
+                    child: const Text("Add Member"),
+                  ),
+                ],
+              ),
             ),
           ),
           actions: <Widget>[
@@ -916,7 +1235,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
-    if (_allUserEmails.isEmpty && _currentMembers.isNotEmpty) {
+    if (!_isInitialized) {
       return Scaffold(
         appBar: AppBar(title: const Text("Trip Details")),
         body: const Center(child: CircularProgressIndicator()),
@@ -982,7 +1301,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                           final String paidByUid = data['paidBy'] as String;
                           final bool isSettled = data['settled'] == true;
 
-                          final paidByDisplay = _allUserEmails[paidByUid] ?? paidByUid;
+                          final paidByDisplay = _allUserNames[paidByUid] ?? paidByUid;
 
                           return Card(
                             margin: const EdgeInsets.symmetric(vertical: 4),
@@ -1005,7 +1324,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                                     builder: (_) => ExpenseDetailsScreen(
                                       tripId: widget.groupCode,
                                       expenseId: expense.id,
-                                      memberEmails: _allUserEmails,
+                                      memberEmails: _allUserNames,
                                       onUpdateExpense: updateExpense,
                                       onDeleteExpense: _deleteExpense,
                                     ),
@@ -1147,7 +1466,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                 // _buildSplitSummary(),
                 OptimizedSplitSummary(
                   overallOwes: overallOwes,
-                  memberEmails: _allUserEmails,
+                  memberNames: _allUserNames,
                 ),
                 const SizedBox(height: 20),
               ],
@@ -1164,6 +1483,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                 groupCode: widget.groupCode,
                 members: _currentMembers,
                 memberEmails: _allUserEmails,
+                memberNames: _allUserNames,
               ),
             ),
           );
@@ -1178,12 +1498,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
 
 class OptimizedSplitSummary extends StatelessWidget {
   final Map<String, Map<String, double>> overallOwes;
-  final Map<String, String> memberEmails;
+  final Map<String, String> memberNames;
 
   const OptimizedSplitSummary({
     super.key,
     required this.overallOwes,
-    required this.memberEmails,
+    required this.memberNames,
   });
 
   @override
@@ -1192,8 +1512,8 @@ class OptimizedSplitSummary extends StatelessWidget {
     overallOwes.forEach((fromUid, payees) {
       payees.forEach((toUid, amount) {
         if (amount > 0.001) {
-          final fromNameOrEmail = memberEmails[fromUid] ?? fromUid;
-          final toNameOrEmail = memberEmails[toUid] ?? toUid;
+          final fromNameOrEmail = memberNames[fromUid] ?? fromUid;
+          final toNameOrEmail = memberNames[toUid] ?? toUid;
           summary.add("$fromNameOrEmail owes $toNameOrEmail ₹${amount.toStringAsFixed(2)}");
         }
       });

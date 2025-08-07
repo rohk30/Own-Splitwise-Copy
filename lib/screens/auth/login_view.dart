@@ -19,6 +19,34 @@ class _LoginViewState extends State<LoginView> {
   bool _loading = false;
   bool _obscurePassword = true; // For password visibility toggle
 
+  Future<String?> _promptForName() async {
+    String name = '';
+    return showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Enter your name'),
+          content: TextField(
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Your name'),
+            onChanged: (value) => name = value,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context), // Cancel
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, name),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
   Future<void> _signIn() async {
     setState(() => _loading = true);
     try {
@@ -32,11 +60,19 @@ class _LoginViewState extends State<LoginView> {
         final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
         final snapshot = await userDoc.get();
 
-        if(!snapshot.exists) {
-          await userDoc.set({
-            'email': user.email ?? '',
-            'trips': [],
-          });
+        if(!snapshot.exists || !snapshot.data()!.containsKey('name')) {
+          final name = await _promptForName();
+          if (name != null && name.trim().isNotEmpty) {
+            await userDoc.set({
+              'email': user.email ?? '',
+              'name': name.trim(),
+              'trips': [],
+            }, SetOptions(merge: true));
+          }
+          // await userDoc.set({
+          //   'email': user.email ?? '',
+          //   'trips': [],
+          // });
         }
       }
 

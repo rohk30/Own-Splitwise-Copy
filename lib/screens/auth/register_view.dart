@@ -10,6 +10,7 @@ class RegisterView extends StatefulWidget {
 }
 
 class _RegisterViewState extends State<RegisterView> {
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
@@ -24,6 +25,7 @@ class _RegisterViewState extends State<RegisterView> {
       final user = userCredential.user;
 
       await FirebaseFirestore.instance.collection('users').doc(user!.uid).set({
+        'name': _nameController.text.trim(),
         'email': user.email,
         'trips': [],
       });
@@ -52,6 +54,10 @@ class _RegisterViewState extends State<RegisterView> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
             TextField(
               controller: _emailController,
               decoration: const InputDecoration(labelText: 'Email'),
