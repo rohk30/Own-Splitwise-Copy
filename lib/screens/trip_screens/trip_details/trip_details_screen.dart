@@ -660,13 +660,23 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     );
   }
 
+  // Option 1: Clear all settlements when settling all debts
+// Replace your current _settleAllExpenses method with this:
+
   Future<void> _settleAllExpenses() async {
     final bool confirm = await showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text("Settle All Debts"),
-          content: const Text("Are you sure you want to mark ALL outstanding expenses as settled for this trip? This action cannot be undone for individual expenses."),
+          content: const Text(
+              "Are you sure you want to settle ALL outstanding balances for this trip?\n\n"
+                  "This will:\n"
+                  "• Mark all expenses as settled\n"
+                  "• Clear all settlement history\n"
+                  "• Reset all balances to zero\n\n"
+                  "This action cannot be undone."
+          ),
           actions: <Widget>[
             TextButton(
               child: const Text("Cancel"),
@@ -687,28 +697,41 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
     }
 
     try {
-      final expensesQuery = FirebaseFirestore.instance
+      final batch = FirebaseFirestore.instance.batch();
+
+      // 1. Mark all unsettled expenses as settled
+      final expensesQuery = await FirebaseFirestore.instance
           .collection('trips')
           .doc(widget.groupCode)
           .collection('expenses')
           .where('settled', isEqualTo: false)
           .get();
 
-      final WriteBatch batch = FirebaseFirestore.instance.batch();
-
-      (await expensesQuery).docs.forEach((doc) {
+      for (var doc in expensesQuery.docs) {
         batch.update(doc.reference, {'settled': true});
-      });
+      }
+
+      // 2. Delete all settlements (since everything is now settled)
+      final settlementsQuery = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.groupCode)
+          .collection('settlements')
+          .get();
+
+      for (var doc in settlementsQuery.docs) {
+        batch.delete(doc.reference);
+      }
 
       await batch.commit();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("All unsettled expenses marked as settled!")),
+        const SnackBar(content: Text("All debts settled and settlement history cleared!")),
       );
-      _calculateOverallSplit();
+
+      _debouncedCalculateOverallSplit();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to settle all expenses: $e")),
+        SnackBar(content: Text("Failed to settle all debts: $e")),
       );
     }
   }
@@ -1657,7 +1680,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                   },
                   icon: const Icon(Icons.done_all),
                   label: const Text("Settle All Debts"),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.lightGreen),
                 ),
                 const SizedBox(height: 24),
                 const Text("Overall Balance:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
