@@ -18,7 +18,7 @@ dependencies:
   cloud_firestore: ^5.6.8
   uuid: ^4.0.0
   graphview: ^1.2.0
-  google_fonts: ^6.2.1
+  google_fonts: ^6.1.0
   collection: ^1.17.1
   flutter_graph_view: ^1.2.0
 
