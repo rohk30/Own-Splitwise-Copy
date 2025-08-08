@@ -400,7 +400,7 @@ class _CreateTripScreenState extends State<CreateTripScreen>
                             ),
 
                             // Add bottom padding for keyboard
-                            SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 50),
+                            // SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 50),
 
                             const SizedBox(height: 60),
 
