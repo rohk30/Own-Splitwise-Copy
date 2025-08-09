@@ -1,39 +1,25 @@
-<!-- 
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+Own Splitwise Copy 💰
+A Flutter + Firebase group expense-splitting app that tracks expenses, calculates balances, and minimizes settlement transactions using a heap-based DSA approach.
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/guides/libraries/writing-package-pages). 
+Downloadable APK link for live working on your Android: https://vitacin-my.sharepoint.com/:u:/g/personal/rohit_kumar2022_vitstudent_ac_in/EZQUCCfkmmJAtmIBG09eil4BSG4mXuASGS5p8BGXCjyR9Q?e=GkQk1r
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-library-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/developing-packages). 
--->
+🔗 Live Demo — https://vitacin-my.sharepoint.com/:v:/g/personal/rohit_kumar2022_vitstudent_ac_in/EQd6L7nDDL9Jjl_OgkNzThUBbjF37PueeboU7ixU1yuQzw?nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJTdHJlYW1XZWJBcHAiLCJyZWZlcnJhbFZpZXciOiJTaGFyZURpYWxvZy1MaW5rIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXcifX0%3D&e=qgIZ5T
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+🚀 Features
+1. Real-time Multi-user trip expense tracking
+2. Add, edit, and delete expenses
+3. Shows pairwise dues between members
+4. Manual settlements supported
+5. Reduced transactions using greedy + priority queue
+6. Optimal payer suggestion for minimal future settlements
 
-## Features
+🛠 Tech Stack
+Frontend: Flutter
+Backend: Firebase (Auth + Firestore)
+Algorithm: Greedy + Min-Max Heap for transaction reduction
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+🤔How Does 'Reduced Transactions' work??
+Say A --> B ₹500, B --> C ₹500 too. Normally this means 2 transactions.
+However an easier work around is A paying ₹500 to C directly cutting it to just 1 transaction
+When more people are involved, this optimization saves a LOT of pay-backs.
 
-## Getting started
-
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
-
-## Usage
-
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder. 
-
-```dart
-const like = 'sample';
-```
-
-## Additional information
-
-TODO: Tell users more about the package: where to find more information, how to 
-contribute to the package, how to file issues, what response they can expect 
-from the package authors, and more.
