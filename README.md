@@ -1,4 +1,4 @@
-Own Splitwise Copy 💰
+Group Expense Splitter 💰
 A Flutter + Firebase group expense-splitting app that tracks expenses, calculates balances, and minimizes settlement transactions using a heap-based DSA approach.
 
 Downloadable APK link for live working on your Android: https://vitacin-my.sharepoint.com/:u:/g/personal/rohit_kumar2022_vitstudent_ac_in/EZQUCCfkmmJAtmIBG09eil4BSG4mXuASGS5p8BGXCjyR9Q?e=GkQk1r
