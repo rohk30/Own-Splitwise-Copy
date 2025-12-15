@@ -179,15 +179,31 @@ class _JoinTripScreenState extends State<JoinTripScreen>
       if (!members.contains(user!.uid)) {
         await docRef.update({
           'members': FieldValue.arrayUnion([user.uid]),
-          'memberDetails.${user.uid}': {
-            'name': userName,
-          }
+          // 'memberDetails.${user.uid}': {
+          //   'name': userName,
+          // }
         });
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .set({
+          'email': user.email,
+          'name': user.displayName ?? 'Unnamed',
+          'trips': FieldValue.arrayUnion([groupCode]),
+        }, SetOptions(merge: true));
+
       } else if (!memberDetails.containsKey(user.uid)) {
+        // await docRef.update({
+        //   // 'memberDetails.${user.uid}': {
+        //   //   'name': userName,
+        //   // }
+        // });
+
         await docRef.update({
-          'memberDetails.${user.uid}': {
-            'name': userName,
-          }
+          'members': FieldValue.arrayUnion([user.uid]),
+          // 'memberDetails.${user.uid}': {
+          //   'name': userName,
+          // }
         });
       }
 

@@ -79,13 +79,23 @@ class _CreateTripScreenState extends State<CreateTripScreen>
       'createdBy': user?.uid,
       'createdAt': Timestamp.now(),
       'members': [user?.uid],
-      'memberEmails': {
-        user!.uid: user.email,
-      },
+      // 'memberEmails': {
+      //   user!.uid: user.email,
+      // },
     };
 
     try {
       await FirebaseFirestore.instance.collection('trips').doc(groupCode).set(tripData);
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user?.uid)
+          .set({
+        'email': user?.email,
+        'name': user?.displayName ?? 'Unnamed',
+        'trips': FieldValue.arrayUnion([groupCode]),
+      }, SetOptions(merge: true));
+
 
       // Save trip locally
       final prefs = await SharedPreferences.getInstance();

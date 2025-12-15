@@ -7,9 +7,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.own_splitwise_copy"
+//    namespace = "com.example.own_splitwise_copy"
+    namespace "com.example.own_splitwise_copy"
+
     compileSdk = flutter.compileSdkVersion
     ndkVersion "25.1.8937393"
+
+//    namespace 'com.example.flutter_barcode_scanner'
 
 //    compileOptions {
 //        sourceCompatibility = JavaVersion.VERSION_1_8
