@@ -7,12 +7,22 @@ import 'package:own_splitwise_copy/screens/trip_screens/join_trip_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/my_trips_view.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/create_trip_screen.dart';
 import 'package:own_splitwise_copy/screens/trip_screens/trip_details/trip_details_screen.dart';
-
 import 'migrate_user_trips.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(
+    options: const FirebaseOptions(
+      apiKey: "AIzaSyBng6BxpfDxR1ph7ej_tMtff16dnO2p78I",
+      authDomain: "splitwise-own.firebaseapp.com",
+      databaseURL: "https://splitwise-own-default-rtdb.firebaseio.com",
+      projectId: "splitwise-own",
+      storageBucket: "splitwise-own.firebasestorage.app",
+      messagingSenderId: "176579762804",
+      appId: "1:176579762804:web:66ad386726b14d3c218f21",
+      measurementId: "G-MF3H1N3WDM"
+    ),
+  );
 
   // 🔥 ONE-TIME MIGRATION (RUN NOW)
   try {
