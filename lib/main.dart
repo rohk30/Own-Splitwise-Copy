@@ -11,18 +11,17 @@ import 'migrate_user_trips.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: "AIzaSyBng6BxpfDxR1ph7ej_tMtff16dnO2p78I",
-      authDomain: "splitwise-own.firebaseapp.com",
-      databaseURL: "https://splitwise-own-default-rtdb.firebaseio.com",
-      projectId: "splitwise-own",
-      storageBucket: "splitwise-own.firebasestorage.app",
-      messagingSenderId: "176579762804",
-      appId: "1:176579762804:web:66ad386726b14d3c218f21",
-      measurementId: "G-MF3H1N3WDM"
-    ),
+  const firebaseOptions = FirebaseOptions(
+    apiKey: String.fromEnvironment('FIREBASE_API_KEY'),
+    authDomain: String.fromEnvironment('FIREBASE_AUTH_DOMAIN'),
+    databaseURL: String.fromEnvironment('FIREBASE_DATABASE_URL'),
+    projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
+    storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
+    messagingSenderId: String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
+    appId: String.fromEnvironment('FIREBASE_APP_ID'),
+    measurementId: String.fromEnvironment('FIREBASE_MEASUREMENT_ID'),
   );
+  await Firebase.initializeApp(options: firebaseOptions);
 
   // 🔥 ONE-TIME MIGRATION (RUN NOW)
   try {

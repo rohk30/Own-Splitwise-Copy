@@ -57,3 +57,7 @@ fabric.properties
 
 # User-specific preferences
 *.iml
+
+# Environment variables (never commit secrets)
+.env
+.env.*
